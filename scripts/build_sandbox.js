@@ -119,10 +119,6 @@ function buildImage(imageName, dockerfile) {
       ? `${sandboxCommand} build --authfile=<(echo '{}')`
       : `${sandboxCommand} build`;
 
-  const npmPackageVersion = JSON.parse(
-    readFileSync(join(process.cwd(), 'package.json'), 'utf-8'),
-  ).version;
-
   try {
     execSync(
       `${buildCommand} ${
@@ -142,6 +138,7 @@ function buildImage(imageName, dockerfile) {
     }
     process.exit(1);
   console.log(`built ${imageName}`);
+  }
 }
 
 if (baseImage && baseDockerfile) {
