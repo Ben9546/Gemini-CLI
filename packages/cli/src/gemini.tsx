@@ -142,7 +142,7 @@ export async function main() {
       if (settings.merged.selectedAuthType) {
         // Validate authentication here because the sandbox will interfere with the Oauth2 web redirect.
         try {
-          const err = validateAuthMethod(settings.merged.selectedAuthType);
+          const err = validateAuthMethod(settings.merged.selectedAuthType, settings.merged.ignoreLocalEnv);
           if (err) {
             throw new Error(err);
           }
@@ -267,12 +267,14 @@ async function loadNonInteractiveConfig(
   return await validateNonInterActiveAuth(
     settings.merged.selectedAuthType,
     finalConfig,
+    settings,
   );
 }
 
 async function validateNonInterActiveAuth(
   selectedAuthType: AuthType | undefined,
   nonInteractiveConfig: Config,
+  settings: LoadedSettings,
 ) {
   // making a special case for the cli. many headless environments might not have a settings.json set
   // so if GEMINI_API_KEY is set, we'll use that. However since the oauth things are interactive anyway, we'll
@@ -285,7 +287,7 @@ async function validateNonInterActiveAuth(
   }
 
   selectedAuthType = selectedAuthType || AuthType.USE_GEMINI;
-  const err = validateAuthMethod(selectedAuthType);
+  const err = validateAuthMethod(selectedAuthType, settings.merged.ignoreLocalEnv);
   if (err != null) {
     console.error(err);
     process.exit(1);

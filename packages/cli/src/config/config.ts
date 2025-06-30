@@ -53,6 +53,7 @@ interface CliArgs {
   telemetryTarget: string | undefined;
   telemetryOtlpEndpoint: string | undefined;
   telemetryLogPrompts: boolean | undefined;
+  'ignore-local-env': boolean | undefined;
 }
 
 async function parseArguments(): Promise<CliArgs> {
@@ -128,6 +129,11 @@ async function parseArguments(): Promise<CliArgs> {
       description: 'Enables checkpointing of file edits',
       default: false,
     })
+    .option('ignore-local-env', {
+      type: 'boolean',
+      description: 'Ignore project-specific .env files, only use global Gemini CLI environment',
+      default: false,
+    })
     .version(await getCliVersion()) // This will enable the --version flag based on package.json
     .alias('v', 'version')
     .help()
@@ -166,9 +172,11 @@ export async function loadCliConfig(
   extensions: Extension[],
   sessionId: string,
 ): Promise<Config> {
-  loadEnvironment();
-
   const argv = await parseArguments();
+  
+  // Check both CLI flag and settings file for ignoreLocalEnv
+  const ignoreLocalEnv = argv['ignore-local-env'] || settings.ignoreLocalEnv || false;
+  loadEnvironment(ignoreLocalEnv);
   const debugMode = argv.debug || false;
 
   // Set the context filename in the server's memoryTool module BEFORE loading memory
@@ -294,9 +302,25 @@ function findEnvFile(startDir: string): string | null {
   }
 }
 
-export function loadEnvironment(): void {
-  const envFilePath = findEnvFile(process.cwd());
-  if (envFilePath) {
-    dotenv.config({ path: envFilePath, quiet: true });
+export function loadEnvironment(ignoreLocalEnv: boolean = false): void {
+  if (ignoreLocalEnv) {
+    // Only load from global Gemini CLI locations
+    const globalPaths = [
+      path.join(os.homedir(), GEMINI_DIR, '.env'),
+      path.join(os.homedir(), '.env')
+    ];
+    
+    for (const envPath of globalPaths) {
+      if (fs.existsSync(envPath)) {
+        dotenv.config({ path: envPath, quiet: true });
+        break;
+      }
+    }
+  } else {
+    // Current behavior - load from project directories
+    const envFilePath = findEnvFile(process.cwd());
+    if (envFilePath) {
+      dotenv.config({ path: envFilePath, quiet: true });
+    }
   }
 }

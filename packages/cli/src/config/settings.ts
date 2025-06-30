@@ -65,6 +65,9 @@ export interface Settings {
   hideWindowTitle?: boolean;
   hideTips?: boolean;
 
+  // Security setting to isolate from project .env files
+  ignoreLocalEnv?: boolean;
+
   // Add other settings here.
 }
 

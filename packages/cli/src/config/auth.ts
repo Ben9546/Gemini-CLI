@@ -7,8 +7,8 @@
 import { AuthType } from '@google/gemini-cli-core';
 import { loadEnvironment } from './config.js';
 
-export const validateAuthMethod = (authMethod: string): string | null => {
-  loadEnvironment();
+export const validateAuthMethod = (authMethod: string, ignoreLocalEnv: boolean = false): string | null => {
+  loadEnvironment(ignoreLocalEnv);
   if (authMethod === AuthType.LOGIN_WITH_GOOGLE_PERSONAL) {
     return null;
   }
