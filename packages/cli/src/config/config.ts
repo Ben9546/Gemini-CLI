@@ -131,7 +131,8 @@ async function parseArguments(): Promise<CliArgs> {
     })
     .option('proxy', {
       type: 'string',
-      description: 'Proxy for gemini client, like schema://user:password@host:port',
+      description:
+        'Proxy for gemini client, like schema://user:password@host:port',
     })
     .version(await getCliVersion()) // This will enable the --version flag based on package.json
     .alias('v', 'version')
@@ -242,7 +243,7 @@ export async function loadCliConfig(
     },
     checkpointing: argv.checkpointing || settings.checkpointing?.enabled,
     proxy:
-      argv.proxy || 
+      argv.proxy ||
       process.env.HTTPS_PROXY ||
       process.env.https_proxy ||
       process.env.HTTP_PROXY ||
