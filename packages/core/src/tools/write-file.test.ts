@@ -155,40 +155,40 @@ describe('WriteFileTool', () => {
   });
 
   describe('validateToolParams', () => {
-    it('should return null for valid absolute path within root', () => {
+    it('should return null for valid absolute path within root', async () => {
       const params = {
         file_path: path.join(rootDir, 'test.txt'),
         content: 'hello',
       };
-      expect(tool.validateToolParams(params)).toBeNull();
+      expect(await tool.validateToolParams(params)).toBeNull();
     });
 
-    it('should return error for relative path', () => {
+    it('should return error for relative path', async () => {
       const params = { file_path: 'test.txt', content: 'hello' };
-      expect(tool.validateToolParams(params)).toMatch(
+      expect(await tool.validateToolParams(params)).toMatch(
         /File path must be absolute/,
       );
     });
 
-    it('should return error for path outside root', () => {
+    it('should return error for path outside root', async () => {
       const outsidePath = path.resolve(tempDir, 'outside-root.txt');
       const params = {
         file_path: outsidePath,
         content: 'hello',
       };
-      expect(tool.validateToolParams(params)).toMatch(
+      expect(await tool.validateToolParams(params)).toMatch(
         /File path must be within the root directory/,
       );
     });
 
-    it('should return error if path is a directory', () => {
+    it('should return error if path is a directory', async () => {
       const dirAsFilePath = path.join(rootDir, 'a_directory');
       fs.mkdirSync(dirAsFilePath);
       const params = {
         file_path: dirAsFilePath,
         content: 'hello',
       };
-      expect(tool.validateToolParams(params)).toMatch(
+      expect(await tool.validateToolParams(params)).toMatch(
         `Path is a directory, not a file: ${dirAsFilePath}`,
       );
     });

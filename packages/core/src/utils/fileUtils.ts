@@ -8,6 +8,8 @@ import fs from 'fs';
 import path from 'path';
 import { PartUnion } from '@google/genai';
 import mime from 'mime-types';
+import { isPathWithinRoot as secureIsPathWithinRoot } from './pathSecurity.js';
+import { secureReadFile } from './secureFileOps.js';
 
 // Constants for text file processing
 const DEFAULT_MAX_LINES_TEXT_FILE = 2000;
@@ -28,6 +30,7 @@ export function getSpecificMimeType(filePath: string): string | undefined {
 
 /**
  * Checks if a path is within a given root directory.
+ * This function now properly resolves symlinks to prevent path traversal attacks.
  * @param pathToCheck The absolute path to check.
  * @param rootDirectory The absolute root directory.
  * @returns True if the path is within the root directory, false otherwise.
@@ -36,21 +39,8 @@ export function isWithinRoot(
   pathToCheck: string,
   rootDirectory: string,
 ): boolean {
-  const normalizedPathToCheck = path.normalize(pathToCheck);
-  const normalizedRootDirectory = path.normalize(rootDirectory);
-
-  // Ensure the rootDirectory path ends with a separator for correct startsWith comparison,
-  // unless it's the root path itself (e.g., '/' or 'C:\').
-  const rootWithSeparator =
-    normalizedRootDirectory === path.sep ||
-    normalizedRootDirectory.endsWith(path.sep)
-      ? normalizedRootDirectory
-      : normalizedRootDirectory + path.sep;
-
-  return (
-    normalizedPathToCheck === normalizedRootDirectory ||
-    normalizedPathToCheck.startsWith(rootWithSeparator)
-  );
+  // Use the secure version that resolves symlinks
+  return secureIsPathWithinRoot(pathToCheck, rootDirectory);
 }
 
 /**
@@ -179,20 +169,21 @@ export async function processSingleFileContent(
   limit?: number,
 ): Promise<ProcessedFileReadResult> {
   try {
-    if (!fs.existsSync(filePath)) {
-      // Sync check is acceptable before async read
+    // Use secure file reading to prevent TOCTOU attacks
+    const readResult = await secureReadFile(filePath);
+    
+    if (readResult.error) {
+      if (readResult.isDirectory) {
+        return {
+          llmContent: '',
+          returnDisplay: 'Path is a directory.',
+          error: readResult.error,
+        };
+      }
       return {
         llmContent: '',
-        returnDisplay: 'File not found.',
-        error: `File not found: ${filePath}`,
-      };
-    }
-    const stats = fs.statSync(filePath); // Sync check
-    if (stats.isDirectory()) {
-      return {
-        llmContent: '',
-        returnDisplay: 'Path is a directory.',
-        error: `Path is a directory, not a file: ${filePath}`,
+        returnDisplay: readResult.error.includes('not found') ? 'File not found.' : 'Error reading file.',
+        error: readResult.error,
       };
     }
 
@@ -209,7 +200,7 @@ export async function processSingleFileContent(
         };
       }
       case 'text': {
-        const content = await fs.promises.readFile(filePath, 'utf8');
+        const content = readResult.content!;
         const lines = content.split('\n');
         const originalLineCount = lines.length;
 

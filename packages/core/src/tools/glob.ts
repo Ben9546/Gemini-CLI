@@ -11,6 +11,7 @@ import { SchemaValidator } from '../utils/schemaValidator.js';
 import { BaseTool, ToolResult } from './tools.js';
 import { shortenPath, makeRelative } from '../utils/paths.js';
 import { Config } from '../config/config.js';
+import { isPathWithinRoot } from '../utils/pathSecurity.js';
 
 // Subset of 'Path' interface provided by 'glob' that we can implement for testing
 export interface GlobPath {
@@ -125,16 +126,7 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
    * Checks if a path is within the root directory.
    */
   private isWithinRoot(pathToCheck: string): boolean {
-    const absolutePathToCheck = path.resolve(pathToCheck);
-    const normalizedPath = path.normalize(absolutePathToCheck);
-    const normalizedRoot = path.normalize(this.rootDirectory);
-    const rootWithSep = normalizedRoot.endsWith(path.sep)
-      ? normalizedRoot
-      : normalizedRoot + path.sep;
-    return (
-      normalizedPath === normalizedRoot ||
-      normalizedPath.startsWith(rootWithSep)
-    );
+    return isPathWithinRoot(pathToCheck, this.rootDirectory);
   }
 
   /**

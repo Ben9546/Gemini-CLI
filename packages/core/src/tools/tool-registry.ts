@@ -7,9 +7,15 @@
 import { FunctionDeclaration } from '@google/genai';
 import { Tool, ToolResult, BaseTool } from './tools.js';
 import { Config } from '../config/config.js';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { discoverMcpTools } from './mcp-client.js';
 import { DiscoveredMCPTool } from './mcp-tool.js';
+import { 
+  validateToolCommand, 
+  validateToolName,
+  splitCommandSafely, 
+  createSecureExecutionEnvironment 
+} from '../utils/commandValidation.js';
 
 type ToolParams = Record<string, unknown>;
 
@@ -50,7 +56,37 @@ Signal: Signal number or \`(none)\` if no signal was received.
 
   async execute(params: ToolParams): Promise<ToolResult> {
     const callCommand = this.config.getToolCallCommand()!;
-    const child = spawn(callCommand, [this.name]);
+    
+    // Validate the call command for security
+    const commandError = validateToolCommand(callCommand);
+    if (commandError) {
+      return {
+        llmContent: `Tool call command validation failed: ${commandError}`,
+        returnDisplay: `Security Error: Invalid tool call command configuration`,
+      };
+    }
+    
+    // Validate the tool name for security
+    const nameError = validateToolName(this.name);
+    if (nameError) {
+      return {
+        llmContent: `Tool name validation failed: ${nameError}`,
+        returnDisplay: `Security Error: Invalid tool name`,
+      };
+    }
+    
+    // Create secure execution environment
+    const secureEnv = createSecureExecutionEnvironment();
+    
+    // Split command safely to get executable and base args
+    const commandParts = callCommand.trim().split(/\s+/);
+    const executable = commandParts[0];
+    const baseArgs = commandParts.slice(1);
+    
+    const child = spawn(executable, [...baseArgs, this.name], {
+      env: secureEnv,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
     child.stdin.write(JSON.stringify(params));
     child.stdin.end();
 
@@ -160,27 +196,76 @@ export class ToolRegistry {
     // discover tools using discovery command, if configured
     const discoveryCmd = this.config.getToolDiscoveryCommand();
     if (discoveryCmd) {
-      // execute discovery command and extract function declarations (w/ or w/o "tool" wrappers)
-      const functions: FunctionDeclaration[] = [];
-      for (const tool of JSON.parse(execSync(discoveryCmd).toString().trim())) {
-        if (tool['function_declarations']) {
-          functions.push(...tool['function_declarations']);
-        } else if (tool['functionDeclarations']) {
-          functions.push(...tool['functionDeclarations']);
-        } else if (tool['name']) {
-          functions.push(tool);
-        }
+      // Validate the discovery command for security
+      const commandError = validateToolCommand(discoveryCmd);
+      if (commandError) {
+        console.error(`Tool discovery command validation failed: ${commandError}`);
+        console.error(`Skipping tool discovery for security reasons. Command: ${discoveryCmd}`);
+        return;
       }
-      // register each function as a tool
-      for (const func of functions) {
-        this.registerTool(
-          new DiscoveredTool(
-            this.config,
-            func.name!,
-            func.description!,
-            func.parameters! as Record<string, unknown>,
-          ),
-        );
+      
+      // Create secure execution environment
+      const secureEnv = createSecureExecutionEnvironment();
+      
+      // Split command safely to get executable and args
+      const commandParts = splitCommandSafely(discoveryCmd.trim());
+      if (!commandParts || commandParts.length === 0) {
+        console.error('Tool discovery command could not be parsed (e.g., unmatched quotes)');
+        console.error(`Skipping tool discovery for security reasons. Command: ${discoveryCmd}`);
+        return;
+      }
+      const executable = commandParts[0];
+      const args = commandParts.slice(1);
+      
+      try {
+        // Execute discovery command and extract function declarations (w/ or w/o "tool" wrappers)
+        const functions: FunctionDeclaration[] = [];
+        const result = spawnSync(executable, args, { 
+          env: secureEnv,
+          encoding: 'utf8',
+          timeout: 30000, // 30 second timeout
+          maxBuffer: 1024 * 1024, // 1MB max output
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        if (result.error || result.status !== 0) {
+          console.error(`Tool discovery command failed:`, result.error || result.stderr);
+          return;
+        }
+        
+        const output = result.stdout.toString().trim();
+        
+        for (const tool of JSON.parse(output)) {
+          if (tool['function_declarations']) {
+            functions.push(...tool['function_declarations']);
+          } else if (tool['functionDeclarations']) {
+            functions.push(...tool['functionDeclarations']);
+          } else if (tool['name']) {
+            functions.push(tool);
+          }
+        }
+        
+        // register each function as a tool (with validation)
+        for (const func of functions) {
+          // Validate tool name before registration
+          const nameError = validateToolName(func.name!);
+          if (nameError) {
+            console.error(`Skipping tool '${func.name}': ${nameError}`);
+            continue;
+          }
+          
+          this.registerTool(
+            new DiscoveredTool(
+              this.config,
+              func.name!,
+              func.description!,
+              func.parameters! as Record<string, unknown>,
+            ),
+          );
+        }
+      } catch (error) {
+        console.error(`Tool discovery failed:`, error);
+        return;
       }
     }
     // discover tools using MCP servers, if configured

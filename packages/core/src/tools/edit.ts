@@ -18,12 +18,14 @@ import {
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { makeRelative, shortenPath } from '../utils/paths.js';
 import { isNodeError } from '../utils/errors.js';
+import { secureReadFile, atomicWriteFile } from '../utils/secureFileOps.js';
 import { GeminiClient } from '../core/client.js';
 import { Config, ApprovalMode } from '../config/config.js';
 import { ensureCorrectEdit } from '../utils/editCorrector.js';
 import { DEFAULT_DIFF_OPTIONS } from './diffOptions.js';
 import { ReadFileTool } from './read-file.js';
 import { ModifiableTool, ModifyContext } from './modifiable-tool.js';
+import { isPathWithinRoot } from '../utils/pathSecurity.js';
 
 /**
  * Parameters for the Edit tool
@@ -134,15 +136,7 @@ Expectation for required parameters:
    * @returns True if the path is within the root directory, false otherwise.
    */
   private isWithinRoot(pathToCheck: string): boolean {
-    const normalizedPath = path.normalize(pathToCheck);
-    const normalizedRoot = this.rootDirectory;
-    const rootWithSep = normalizedRoot.endsWith(path.sep)
-      ? normalizedRoot
-      : normalizedRoot + path.sep;
-    return (
-      normalizedPath === normalizedRoot ||
-      normalizedPath.startsWith(rootWithSep)
-    );
+    return isPathWithinRoot(pathToCheck, this.rootDirectory);
   }
 
   /**
@@ -211,17 +205,36 @@ Expectation for required parameters:
     let occurrences = 0;
     let error: { display: string; raw: string } | undefined = undefined;
 
-    try {
-      currentContent = fs.readFileSync(params.file_path, 'utf8');
+    // Use secure read to prevent TOCTOU attacks
+    const readResult = await secureReadFile(params.file_path);
+    
+    if (readResult.error) {
+      if (readResult.error.includes('not found')) {
+        fileExists = false;
+        currentContent = '';
+      } else {
+        // Handle other errors (permissions, symlinks, etc.)
+        error = {
+          display: `Cannot read file: ${readResult.error}`,
+          raw: readResult.error
+        };
+        return {
+          editData: {
+            originalContent: '',
+            newContent: params.new_string,
+            finalOldString,
+            finalNewString,
+            occurrences: 0,
+          },
+          error,
+          isNewFile: false,
+        };
+      }
+    } else {
+      currentContent = readResult.content!;
       // Normalize line endings to LF for consistent processing.
       currentContent = currentContent.replace(/\r\n/g, '\n');
       fileExists = true;
-    } catch (err: unknown) {
-      if (!isNodeError(err) || err.code !== 'ENOENT') {
-        // Rethrow unexpected FS errors (permissions, etc.)
-        throw err;
-      }
-      fileExists = false;
     }
 
     if (params.old_string === '' && !fileExists) {
@@ -300,7 +313,7 @@ Expectation for required parameters:
     if (this.config.getApprovalMode() === ApprovalMode.AUTO_EDIT) {
       return false;
     }
-    const validationError = this.validateToolParams(params);
+    const validationError = await this.validateToolParams(params);
     if (validationError) {
       console.error(
         `[EditTool Wrapper] Attempted confirmation with invalid parameters: ${validationError}`,
@@ -376,7 +389,7 @@ Expectation for required parameters:
     params: EditToolParams,
     signal: AbortSignal,
   ): Promise<ToolResult> {
-    const validationError = this.validateToolParams(params);
+    const validationError = await this.validateToolParams(params);
     if (validationError) {
       return {
         llmContent: `Error: Invalid parameters provided. Reason: ${validationError}`,
@@ -403,8 +416,15 @@ Expectation for required parameters:
     }
 
     try {
-      this.ensureParentDirectoriesExist(params.file_path);
-      fs.writeFileSync(params.file_path, editData.newContent, 'utf8');
+      // Use atomic write to prevent TOCTOU and partial write issues
+      const writeResult = await atomicWriteFile(params.file_path, editData.newContent);
+      
+      if (!writeResult.success) {
+        return {
+          llmContent: `Error writing file: ${writeResult.error}`,
+          returnDisplay: `Error: ${writeResult.error}`,
+        };
+      }
 
       let displayResult: ToolResultDisplay;
       if (editData.isNewFile) {

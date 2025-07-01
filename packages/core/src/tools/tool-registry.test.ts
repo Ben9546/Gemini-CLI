@@ -29,7 +29,7 @@ import {
   mcpToTool,
   Type,
 } from '@google/genai';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 // Use vi.hoisted to define the mock function so it can be used in the vi.mock factory
 const mockDiscoverMcpTools = vi.hoisted(() => vi.fn());
@@ -44,7 +44,7 @@ vi.mock('node:child_process', async () => {
   const actual = await vi.importActual('node:child_process');
   return {
     ...actual,
-    execSync: vi.fn(),
+    spawnSync: vi.fn(),
     spawn: vi.fn(),
   };
 });
@@ -226,7 +226,7 @@ describe('ToolRegistry', () => {
     let mockConfigGetToolDiscoveryCommand: ReturnType<typeof vi.spyOn>;
     let mockConfigGetMcpServers: ReturnType<typeof vi.spyOn>;
     let mockConfigGetMcpServerCommand: ReturnType<typeof vi.spyOn>;
-    let mockExecSync: ReturnType<typeof vi.mocked<typeof execSync>>;
+    let mockSpawnSync: ReturnType<typeof vi.mocked<typeof spawnSync>>;
 
     beforeEach(() => {
       mockConfigGetToolDiscoveryCommand = vi.spyOn(
@@ -235,15 +235,15 @@ describe('ToolRegistry', () => {
       );
       mockConfigGetMcpServers = vi.spyOn(config, 'getMcpServers');
       mockConfigGetMcpServerCommand = vi.spyOn(config, 'getMcpServerCommand');
-      mockExecSync = vi.mocked(execSync);
+      mockSpawnSync = vi.mocked(spawnSync);
       toolRegistry = new ToolRegistry(config); // Reset registry
       // Reset the mock for discoverMcpTools before each test in this suite
       mockDiscoverMcpTools.mockReset().mockResolvedValue(undefined);
     });
 
     it('should discover tools using discovery command', async () => {
-      // ... this test remains largely the same
-      const discoveryCommand = 'my-discovery-command';
+      // Use a valid command that passes our new security validation
+      const discoveryCommand = 'node scripts/discover-tools.js';
       mockConfigGetToolDiscoveryCommand.mockReturnValue(discoveryCommand);
       const mockToolDeclarations: FunctionDeclaration[] = [
         {
@@ -252,13 +252,26 @@ describe('ToolRegistry', () => {
           parameters: { type: Type.OBJECT, properties: {} },
         },
       ];
-      mockExecSync.mockReturnValue(
-        Buffer.from(
-          JSON.stringify([{ function_declarations: mockToolDeclarations }]),
-        ),
-      );
+      
+      // Mock successful spawnSync result
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        signal: null,
+        error: undefined,
+        pid: 12345,
+        stdout: JSON.stringify([{ function_declarations: mockToolDeclarations }]),
+        stderr: '',
+        output: [null, '', '']
+      } as any);
+      
       await toolRegistry.discoverTools();
-      expect(execSync).toHaveBeenCalledWith(discoveryCommand);
+      expect(spawnSync).toHaveBeenCalledWith('node', ['scripts/discover-tools.js'], expect.objectContaining({
+        env: expect.any(Object),
+        encoding: 'utf8',
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe']
+      }));
       const discoveredTool = toolRegistry.getTool('discovered-tool-1');
       expect(discoveredTool).toBeInstanceOf(DiscoveredTool);
     });
