@@ -19,6 +19,7 @@ import {
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { getErrorMessage } from '../utils/errors.js';
 import stripAnsi from 'strip-ansi';
+import { validateCommandSafety, escapeShellArgument } from '../utils/commandSecurity.js';
 
 export interface ShellToolParams {
   command: string;
@@ -195,6 +196,13 @@ Process Group PGID: Process group started or \`(none)\``,
     if (!params.command.trim()) {
       return 'Command cannot be empty.';
     }
+    
+    // Validate command safety before execution
+    const safetyError = validateCommandSafety(params.command);
+    if (safetyError) {
+      return safetyError;
+    }
+    
     if (!this.getCommandRoot(params.command)) {
       return 'Could not identify command root to obtain permission from user.';
     }
@@ -272,9 +280,11 @@ Process Group PGID: Process group started or \`(none)\``,
       ? params.command
       : (() => {
           // wrap command to append subprocess pids (via pgrep) to temporary file
+          // Use proper escaping to prevent injection through the temp file path
           let command = params.command.trim();
           if (!command.endsWith('&')) command += ';';
-          return `{ ${command} }; __code=$?; pgrep -g 0 >${tempFilePath} 2>&1; exit $__code;`;
+          const escapedTempPath = escapeShellArgument(tempFilePath);
+          return `{ ${command} }; __code=$?; pgrep -g 0 >${escapedTempPath} 2>&1; exit $__code;`;
         })();
 
     // spawn command in specified directory (or project root if not specified)

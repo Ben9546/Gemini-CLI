@@ -128,7 +128,7 @@ export abstract class BaseTool<
    * @returns An error message string if invalid, null otherwise
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  validateToolParams(params: TParams): string | null {
+  validateToolParams(params: TParams): string | null | Promise<string | null> {
     // Implementation would typically use a JSON Schema validator
     // This is a placeholder that should be implemented by derived classes
     return null;

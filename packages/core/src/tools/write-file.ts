@@ -18,6 +18,7 @@ import {
 } from './tools.js';
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { makeRelative, shortenPath } from '../utils/paths.js';
+import { secureWriteFile, securePathCheck } from '../utils/secureFileOps.js';
 import { getErrorMessage, isNodeError } from '../utils/errors.js';
 import {
   ensureCorrectEdit,
@@ -108,7 +109,7 @@ export class WriteFileTool
     );
   }
 
-  validateToolParams(params: WriteFileToolParams): string | null {
+  async validateToolParams(params: WriteFileToolParams): Promise<string | null> {
     if (
       this.schema.parameters &&
       !SchemaValidator.validate(
@@ -126,19 +127,19 @@ export class WriteFileTool
       return `File path must be within the root directory (${this.config.getTargetDir()}): ${filePath}`;
     }
 
-    try {
-      // This check should be performed only if the path exists.
-      // If it doesn't exist, it's a new file, which is valid for writing.
-      if (fs.existsSync(filePath)) {
-        const stats = fs.lstatSync(filePath);
-        if (stats.isDirectory()) {
-          return `Path is a directory, not a file: ${filePath}`;
-        }
-      }
-    } catch (statError: unknown) {
-      // If fs.existsSync is true but lstatSync fails (e.g., permissions, race condition where file is deleted)
-      // this indicates an issue with accessing the path that should be reported.
-      return `Error accessing path properties for validation: ${filePath}. Reason: ${statError instanceof Error ? statError.message : String(statError)}`;
+    // Use secure path check to prevent TOCTOU attacks
+    const pathCheck = await securePathCheck(filePath);
+    
+    if (pathCheck.error) {
+      return `Error accessing path properties for validation: ${filePath}. Reason: ${pathCheck.error}`;
+    }
+    
+    if (pathCheck.exists && pathCheck.isDirectory) {
+      return `Path is a directory, not a file: ${filePath}`;
+    }
+    
+    if (pathCheck.exists && pathCheck.isSymlink) {
+      return `Path is a symbolic link. For security reasons, writing to symlinks is not allowed: ${filePath}`;
     }
 
     return null;
@@ -166,7 +167,7 @@ export class WriteFileTool
       return false;
     }
 
-    const validationError = this.validateToolParams(params);
+    const validationError = await this.validateToolParams(params);
     if (validationError) {
       return false;
     }
@@ -216,7 +217,7 @@ export class WriteFileTool
     params: WriteFileToolParams,
     abortSignal: AbortSignal,
   ): Promise<ToolResult> {
-    const validationError = this.validateToolParams(params);
+    const validationError = await this.validateToolParams(params);
     if (validationError) {
       return {
         llmContent: `Error: Invalid parameters provided. Reason: ${validationError}`,
@@ -252,12 +253,20 @@ export class WriteFileTool
         !correctedContentResult.fileExists);
 
     try {
-      const dirName = path.dirname(params.file_path);
-      if (!fs.existsSync(dirName)) {
-        fs.mkdirSync(dirName, { recursive: true });
+      // Use secure write to prevent TOCTOU attacks
+      const writeResult = await secureWriteFile(params.file_path, fileContent, {
+        overwrite: true,
+        createDirectories: true
+      });
+      
+      if (!writeResult.success) {
+        return {
+          displayContent: JSON.stringify({
+            error: writeResult.error,
+          }),
+          content: writeResult.error,
+        };
       }
-
-      fs.writeFileSync(params.file_path, fileContent, 'utf8');
 
       // Generate diff for display result
       const fileName = path.basename(params.file_path);
