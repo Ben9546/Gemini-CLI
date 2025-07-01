@@ -52,8 +52,8 @@ async function main() {
 
   const testPatterns =
     args.length > 0
-      ? args.map((arg) => `integration-tests/${arg}.test.js`)
-      : ['integration-tests/*.test.js'];
+      ? args.map((arg) => `tests/integration/${arg}.test.js`)
+      : ['tests/integration/*.test.js'];
   const testFiles = glob.sync(testPatterns, { cwd: rootDir, absolute: true });
 
   for (const testFile of testFiles) {

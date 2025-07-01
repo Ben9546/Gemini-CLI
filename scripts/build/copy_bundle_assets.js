@@ -23,7 +23,7 @@ import { fileURLToPath } from 'url';
 import { glob } from 'glob';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, '..');
+const root = join(__dirname, '..', '..');
 const bundleDir = join(root, 'bundle');
 
 // Create the bundle directory if it doesn't exist

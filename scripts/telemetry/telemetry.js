@@ -72,6 +72,7 @@ if (targetArg) {
 const scriptPath = join(
   projectRoot,
   'scripts',
+  'telemetry',
   target === 'gcp' ? 'telemetry_gcp.js' : 'local_telemetry.js',
 );
 

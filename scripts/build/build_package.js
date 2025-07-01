@@ -30,7 +30,7 @@ if (!process.cwd().includes('packages')) {
 execSync('tsc --build', { stdio: 'inherit' });
 
 // copy .{md,json} files
-execSync('node ../../scripts/copy_files.js', { stdio: 'inherit' });
+execSync('node ../../scripts/build/copy_files.js', { stdio: 'inherit' });
 
 // touch dist/.last_build
 writeFileSync(join(process.cwd(), 'dist', '.last_build'), '');

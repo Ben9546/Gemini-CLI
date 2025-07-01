@@ -6,12 +6,11 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import Gradient from 'ink-gradient';
-import { Colors } from '../colors.js';
 import { formatDuration } from '../utils/formatters.js';
 import { useSessionStats } from '../contexts/SessionContext.js';
 import { computeSessionStats } from '../utils/computeStats.js';
 import { FormattedStats, StatRow, StatsColumn } from './Stats.js';
+import { Colors } from '../colors.js';
 
 // --- Prop and Data Structures ---
 
@@ -72,13 +71,9 @@ export const SessionSummaryDisplay: React.FC<SessionSummaryDisplayProps> = ({
       alignSelf="flex-start"
     >
       <Box marginBottom={1} flexDirection="column">
-        {Colors.GradientColors ? (
-          <Gradient colors={Colors.GradientColors}>
-            <Text bold>{title}</Text>
-          </Gradient>
-        ) : (
-          <Text bold>{title}</Text>
-        )}
+        <Text bold color={Colors.GradientColors?.[1] || Colors.AccentPurple}>
+          {title}
+        </Text>
       </Box>
 
       <Box marginTop={1}>

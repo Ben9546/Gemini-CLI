@@ -29,6 +29,7 @@ import {
   ToolCallStatus,
   HistoryItemWithoutId,
 } from '../types.js';
+import { Content } from '@google/genai';
 
 export type ScheduleFn = (
   request: ToolCallRequestInfo | ToolCallRequestInfo[],
@@ -70,6 +71,8 @@ export function useReactToolScheduler(
     React.SetStateAction<HistoryItemWithoutId | null>
   >,
   getPreferredEditor: () => EditorType | undefined,
+  history?: Content[],
+  clientHistory?: Content[],
 ): [TrackedToolCall[], ScheduleFn, MarkToolsAsSubmittedFn] {
   const [toolCallsForDisplay, setToolCallsForDisplay] = useState<
     TrackedToolCall[]
@@ -131,25 +134,32 @@ export function useReactToolScheduler(
     [setToolCallsForDisplay],
   );
 
-  const scheduler = useMemo(
-    () =>
-      new CoreToolScheduler({
-        toolRegistry: config.getToolRegistry(),
-        outputUpdateHandler,
-        onAllToolCallsComplete: allToolCallsCompleteHandler,
-        onToolCallsUpdate: toolCallsUpdateHandler,
-        approvalMode: config.getApprovalMode(),
-        getPreferredEditor,
-        config,
-      }),
-    [
-      config,
+  const scheduler = useMemo(() => {
+    const schedulerInstance = new CoreToolScheduler({
+      toolRegistry: config.getToolRegistry(),
       outputUpdateHandler,
-      allToolCallsCompleteHandler,
-      toolCallsUpdateHandler,
+      onAllToolCallsComplete: allToolCallsCompleteHandler,
+      onToolCallsUpdate: toolCallsUpdateHandler,
+      approvalMode: config.getApprovalMode(),
       getPreferredEditor,
-    ],
-  );
+      config,
+    });
+
+    // Set history for checkpointing
+    if (history || clientHistory) {
+      schedulerInstance.setHistory(history || [], clientHistory);
+    }
+
+    return schedulerInstance;
+  }, [
+    config,
+    outputUpdateHandler,
+    allToolCallsCompleteHandler,
+    toolCallsUpdateHandler,
+    getPreferredEditor,
+    history,
+    clientHistory,
+  ]);
 
   const schedule: ScheduleFn = useCallback(
     (

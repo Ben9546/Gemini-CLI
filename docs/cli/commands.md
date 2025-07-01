@@ -130,3 +130,126 @@ The `!` prefix lets you interact with your system's shell directly from within G
       - When exited, the UI reverts to its standard appearance and normal Gemini CLI behavior resumes.
 
 - **Caution for all `!` usage:** Commands you execute in shell mode have the same permissions and impact as if you ran them directly in your terminal.
+
+## Basic Commands
+
+### `@help`
+
+Displays comprehensive help information for context management commands in a beautifully formatted ASCII art box.
+
+**Usage:**
+
+```bash
+@help
+```
+
+**What it shows:**
+
+- File inclusion commands (`@filename`, `@directory/`)
+- Context management commands (`@list`, `@status`, `@remove`, `@clear`)
+- Helpful tips for using the context system
+- Token usage information and best practices
+
+**Example output:**
+
+```
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Context Management Commands:                                                                              │
+│ Use @ commands to manage files in your conversation context.                                              │
+│                                                                                                           │
+│ File Inclusion:                                                                                          │
+│ @filename - Include a specific file in context (e.g., @src/main.ts)                                      │
+│ @directory/ - Include all files in a directory (e.g., @src/)                                             │
+│                                                                                                           │
+│ Context Management:                                                                                      │
+│ @list - Show all files currently in context with sizes and token estimates                               │
+│ @status - Display current context usage statistics                                                       │
+│ @remove filename - Remove a specific file from context                                                   │
+│ @clear - Remove all files from context                                                                   │
+│                                                                                                           │
+│ Tips:                                                                                                    │
+│ • Files are automatically tracked when you include them with @                                           │
+│ • Context is limited to ~1M tokens - use @status to monitor usage                                        │
+│ • Git-ignored files are automatically excluded from context                                              │
+│ • Use @list to see what files are currently in your context                                             │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
+
+### Context Management Commands
+
+#### `@list` or `@show`
+
+Shows all files currently in your conversation context with their sizes and estimated token counts.
+
+**Usage:**
+
+```bash
+@list
+@show
+```
+
+#### `@status`
+
+Displays current context usage statistics including file count, token usage, and percentage of context window used.
+
+**Usage:**
+
+```bash
+@status
+```
+
+#### `@remove <filename>`
+
+Removes a specific file from your conversation context.
+
+**Usage:**
+
+```bash
+@remove package.json
+@remove src/main.ts
+```
+
+#### `@clear` or `@clear-all`
+
+Removes all files from your conversation context.
+
+**Usage:**
+
+```bash
+@clear
+@clear-all
+```
+
+## File Inclusion
+
+### `@filename`
+
+Include a specific file in your conversation context.
+
+**Usage:**
+
+```bash
+@package.json
+@src/main.ts
+@README.md
+```
+
+### `@directory/`
+
+Include all files in a directory in your conversation context.
+
+**Usage:**
+
+```bash
+@src/
+@docs/
+@tests/
+```
+
+## Tips for Context Management
+
+- **Monitor Usage**: Use `@status` to check your current token usage
+- **List Files**: Use `@list` to see what files are in your context
+- **Remove Unused**: Use `@remove` to remove files you no longer need
+- **Start Fresh**: Use `@clear` to remove all files and start with a clean context
+- **Get Help**: Use `@help` anytime to see all available context management commands

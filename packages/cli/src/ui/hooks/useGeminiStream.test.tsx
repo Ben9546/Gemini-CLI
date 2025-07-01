@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useGeminiStream, mergePartListUnions } from './useGeminiStream.js';
 import { useInput } from 'ink';
+import { FileContextProvider } from '../contexts/FileContextContext.js';
 import {
   useReactToolScheduler,
   TrackedToolCall,
@@ -296,6 +297,7 @@ describe('useGeminiStream', () => {
       getUsageStatisticsEnabled: () => true,
       getDebugMode: () => false,
       addHistory: vi.fn(),
+      getContentGeneratorConfig: vi.fn(() => ({ authType: AuthType.USE_GEMINI })),
     } as unknown as Config;
     mockOnDebugMessage = vi.fn();
     mockHandleSlashCommand = vi.fn().mockResolvedValue(false);
@@ -335,6 +337,7 @@ describe('useGeminiStream', () => {
   const renderTestHook = (
     initialToolCalls: TrackedToolCall[] = [],
     geminiClient?: any,
+    config?: Config,
   ) => {
     let currentToolCalls = initialToolCalls;
     const setToolCalls = (newToolCalls: TrackedToolCall[]) => {
@@ -349,61 +352,35 @@ describe('useGeminiStream', () => {
     ]);
 
     const client = geminiClient || mockConfig.getGeminiClient();
+    const testConfig = config || mockConfig;
 
     const { result, rerender } = renderHook(
-      (props: {
-        client: any;
-        history: HistoryItem[];
-        addItem: UseHistoryManagerReturn['addItem'];
-        setShowHelp: Dispatch<SetStateAction<boolean>>;
-        config: Config;
-        onDebugMessage: (message: string) => void;
-        handleSlashCommand: (
-          cmd: PartListUnion,
-        ) => Promise<
-          | import('./slashCommandProcessor.js').SlashCommandActionReturn
-          | boolean
-        >;
-        shellModeActive: boolean;
-        loadedSettings: LoadedSettings;
-        toolCalls?: TrackedToolCall[]; // Allow passing updated toolCalls
-      }) => {
-        // Update the mock's return value if new toolCalls are passed in props
-        if (props.toolCalls) {
-          setToolCalls(props.toolCalls);
-        }
+      () => {
         return useGeminiStream(
-          props.client,
-          props.history,
-          props.addItem,
-          props.setShowHelp,
-          props.config,
-          props.onDebugMessage,
-          props.handleSlashCommand,
-          props.shellModeActive,
+          client,
+          [],
+          mockAddItem as unknown as UseHistoryManagerReturn['addItem'],
+          mockSetShowHelp,
+          testConfig,
+          mockOnDebugMessage,
+          mockHandleSlashCommand as unknown as (
+            cmd: PartListUnion,
+          ) => Promise<
+            | import('./slashCommandProcessor.js').SlashCommandActionReturn
+            | boolean
+          >,
+          false,
           () => 'vscode' as EditorType,
           () => {},
           () => Promise.resolve(),
         );
       },
       {
-        initialProps: {
-          client,
-          history: [],
-          addItem: mockAddItem as unknown as UseHistoryManagerReturn['addItem'],
-          setShowHelp: mockSetShowHelp,
-          config: mockConfig,
-          onDebugMessage: mockOnDebugMessage,
-          handleSlashCommand: mockHandleSlashCommand as unknown as (
-            cmd: PartListUnion,
-          ) => Promise<
-            | import('./slashCommandProcessor.js').SlashCommandActionReturn
-            | boolean
-          >,
-          shellModeActive: false,
-          loadedSettings: mockLoadedSettings,
-          toolCalls: initialToolCalls,
-        },
+        wrapper: ({ children }) => (
+          <FileContextProvider config={testConfig}>
+            {children}
+          </FileContextProvider>
+        ),
       },
     );
     return {
@@ -506,21 +483,7 @@ describe('useGeminiStream', () => {
       return [[], mockScheduleToolCalls, mockMarkToolsAsSubmitted];
     });
 
-    renderHook(() =>
-      useGeminiStream(
-        new MockedGeminiClientClass(mockConfig),
-        [],
-        mockAddItem,
-        mockSetShowHelp,
-        mockConfig,
-        mockOnDebugMessage,
-        mockHandleSlashCommand,
-        false,
-        () => 'vscode' as EditorType,
-        () => {},
-        () => Promise.resolve(),
-      ),
-    );
+    const { result } = renderTestHook(completedToolCalls);
 
     // Trigger the onComplete callback with completed tools
     await act(async () => {
@@ -570,21 +533,7 @@ describe('useGeminiStream', () => {
       return [[], mockScheduleToolCalls, mockMarkToolsAsSubmitted];
     });
 
-    renderHook(() =>
-      useGeminiStream(
-        client,
-        [],
-        mockAddItem,
-        mockSetShowHelp,
-        mockConfig,
-        mockOnDebugMessage,
-        mockHandleSlashCommand,
-        false,
-        () => 'vscode' as EditorType,
-        () => {},
-        () => Promise.resolve(),
-      ),
-    );
+    const { result } = renderTestHook(cancelledToolCalls);
 
     // Trigger the onComplete callback with cancelled tools
     await act(async () => {
@@ -657,21 +606,7 @@ describe('useGeminiStream', () => {
       ];
     });
 
-    const { result, rerender } = renderHook(() =>
-      useGeminiStream(
-        new MockedGeminiClientClass(mockConfig),
-        [],
-        mockAddItem,
-        mockSetShowHelp,
-        mockConfig,
-        mockOnDebugMessage,
-        mockHandleSlashCommand,
-        false,
-        () => 'vscode' as EditorType,
-        () => {},
-        () => Promise.resolve(),
-      ),
-    );
+    const { result, rerender } = renderTestHook(initialToolCalls);
 
     // 1. Initial state should be Responding because a tool is executing.
     expect(result.current.streamingState).toBe(StreamingState.Responding);
@@ -739,7 +674,7 @@ describe('useGeminiStream', () => {
       })();
       mockSendMessageStream.mockReturnValue(mockStream);
 
-      const { result } = renderTestHook();
+      const { result } = renderTestHook([], mockConfig);
 
       // Start a query
       await act(async () => {
@@ -770,7 +705,7 @@ describe('useGeminiStream', () => {
     });
 
     it('should not do anything if escape is pressed when not responding', () => {
-      const { result } = renderTestHook();
+      const { result } = renderTestHook([], mockConfig);
 
       expect(result.current.streamingState).toBe(StreamingState.Idle);
 
@@ -799,7 +734,7 @@ describe('useGeminiStream', () => {
       })();
       mockSendMessageStream.mockReturnValue(mockStream);
 
-      const { result } = renderTestHook();
+      const { result } = renderTestHook([], mockConfig);
 
       await act(async () => {
         result.current.submitQuery('long running query');
@@ -901,21 +836,7 @@ describe('useGeminiStream', () => {
         return [[], mockScheduleToolCalls, mockMarkToolsAsSubmitted];
       });
 
-      const { result } = renderHook(() =>
-        useGeminiStream(
-          new MockedGeminiClientClass(mockConfig),
-          [],
-          mockAddItem,
-          mockSetShowHelp,
-          mockConfig,
-          mockOnDebugMessage,
-          mockHandleSlashCommand,
-          false,
-          () => 'vscode' as EditorType,
-          () => {},
-          () => Promise.resolve(),
-        ),
-      );
+      const { result } = renderTestHook([completedToolCall]);
 
       // --- User runs the slash command ---
       await act(async () => {
@@ -976,21 +897,7 @@ describe('useGeminiStream', () => {
         return [[], mockScheduleToolCalls, mockMarkToolsAsSubmitted];
       });
 
-      renderHook(() =>
-        useGeminiStream(
-          new MockedGeminiClientClass(mockConfig),
-          [],
-          mockAddItem,
-          mockSetShowHelp,
-          mockConfig,
-          mockOnDebugMessage,
-          mockHandleSlashCommand,
-          false,
-          () => 'vscode' as EditorType,
-          () => {},
-          mockPerformMemoryRefresh,
-        ),
-      );
+      const { result } = renderTestHook([completedToolCall]);
 
       // Trigger the onComplete callback with the completed save_memory tool
       await act(async () => {
@@ -1025,21 +932,7 @@ describe('useGeminiStream', () => {
         })),
       } as unknown as Config;
 
-      const { result } = renderHook(() =>
-        useGeminiStream(
-          new MockedGeminiClientClass(testConfig),
-          [],
-          mockAddItem,
-          mockSetShowHelp,
-          testConfig,
-          mockOnDebugMessage,
-          mockHandleSlashCommand,
-          false,
-          () => 'vscode' as EditorType,
-          () => {},
-          () => Promise.resolve(),
-        ),
-      );
+      const { result } = renderTestHook([], new MockedGeminiClientClass(testConfig), testConfig);
 
       // 2. Action
       await act(async () => {

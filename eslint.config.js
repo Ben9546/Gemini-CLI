@@ -177,27 +177,6 @@ export default tseslint.config(
   },
   // Prettier config must be last
   prettierConfig,
-  // extra settings for scripts that we run directly with node
-  {
-    files: ['./integration-tests/**/*.js'],
-    languageOptions: {
-      globals: {
-        ...globals.node,
-        process: 'readonly',
-        console: 'readonly',
-      },
-    },
-    rules: {
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
-    },
-  },
   // Custom eslint rules for this repo
   {
     files: ['packages/**/*.{js,jsx,ts,tsx}'],
@@ -214,6 +193,27 @@ export default tseslint.config(
         'error',
         {
           root: path.join(projectRoot, 'packages'),
+        },
+      ],
+    },
+  },
+  // extra settings for tests that we run directly with node
+  {
+    files: ['./tests/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        process: 'readonly',
+        console: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
         },
       ],
     },

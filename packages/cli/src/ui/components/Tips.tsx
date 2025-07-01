@@ -40,6 +40,13 @@ export const Tips: React.FC<TipsProps> = ({ config }) => {
         </Text>{' '}
         for more information.
       </Text>
+      <Text color={Colors.Foreground}>
+        {geminiMdFileCount === 0 ? '5.' : '4.'}{' '}
+        <Text bold color={Colors.AccentPurple}>
+          @help
+        </Text>{' '}
+        for more info on context management commands.
+      </Text>
     </Box>
   );
 };

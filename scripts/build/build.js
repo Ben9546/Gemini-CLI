@@ -23,7 +23,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, '..');
+const root = join(__dirname, '..', '..');
 
 // npm install if node_modules was removed (e.g. via npm run clean or scripts/clean.js)
 if (!existsSync(join(root, 'node_modules'))) {
@@ -37,7 +37,7 @@ execSync('npm run build --workspaces', { stdio: 'inherit', cwd: root });
 // also build container image if sandboxing is enabled
 // skip (-s) npm install + build since we did that above
 try {
-  execSync('node scripts/sandbox_command.js -q', {
+  execSync('node scripts/utils/sandbox_command.js -q', {
     stdio: 'inherit',
     cwd: root,
   });
@@ -45,7 +45,7 @@ try {
     process.env.BUILD_SANDBOX === '1' ||
     process.env.BUILD_SANDBOX === 'true'
   ) {
-    execSync('node scripts/build_sandbox.js -s', {
+    execSync('node scripts/build/build_sandbox.js -s', {
       stdio: 'inherit',
       cwd: root,
     });

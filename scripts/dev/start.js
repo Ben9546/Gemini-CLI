@@ -23,11 +23,11 @@ import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, '..');
+const root = join(__dirname, '../..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'));
 
 // check build status, write warnings to file for app to display if needed
-execSync('node ./scripts/check-build-status.js', {
+execSync('node ./scripts/dev/check-build-status.js', {
   stdio: 'inherit',
   cwd: root,
 });
@@ -35,7 +35,7 @@ execSync('node ./scripts/check-build-status.js', {
 const nodeArgs = [];
 let sandboxCommand = undefined;
 try {
-  sandboxCommand = execSync('node scripts/sandbox_command.js', {
+  sandboxCommand = execSync('node scripts/utils/sandbox_command.js', {
     cwd: root,
   })
     .toString()

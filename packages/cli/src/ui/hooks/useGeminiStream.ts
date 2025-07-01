@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { useInput } from 'ink';
 import {
   Config,
@@ -19,13 +19,12 @@ import {
   MessageSenderType,
   ToolCallRequestInfo,
   logUserPrompt,
-  GitService,
   EditorType,
   ThoughtSummary,
   UnauthorizedError,
   UserPromptEvent,
 } from '@google/gemini-cli-core';
-import { type Part, type PartListUnion } from '@google/genai';
+import { type Part, type PartListUnion, Content } from '@google/genai';
 import {
   StreamingState,
   HistoryItem,
@@ -37,13 +36,10 @@ import {
 import { isAtCommand } from '../utils/commandUtils.js';
 import { parseAndFormatApiError } from '../utils/errorParsing.js';
 import { useShellCommandProcessor } from './shellCommandProcessor.js';
-import { handleAtCommand } from './atCommandProcessor.js';
 import { findLastSafeSplitPoint } from '../utils/markdownUtilities.js';
 import { useStateAndRef } from './useStateAndRef.js';
 import { UseHistoryManagerReturn } from './useHistoryManager.js';
 import { useLogger } from './useLogger.js';
-import { promises as fs } from 'fs';
-import path from 'path';
 import {
   useReactToolScheduler,
   mapToDisplay as mapTrackedToolCallsToDisplay,
@@ -51,6 +47,78 @@ import {
   TrackedCompletedToolCall,
   TrackedCancelledToolCall,
 } from './useReactToolScheduler.js';
+import { handleEnhancedAtCommand } from './enhancedAtCommandProcessor.js';
+import { useFileContext } from '../contexts/FileContextContext.js';
+
+/**
+ * Extract file paths from a processed query containing file content
+ */
+function _extractFilePathsFromProcessedQuery(
+  processedQuery: PartListUnion,
+): string[] {
+  const filePaths: string[] = [];
+
+  if (Array.isArray(processedQuery)) {
+    for (const part of processedQuery) {
+      if (typeof part === 'string') {
+        // Look for file content markers like "--- Content from @filename ---"
+        const fileContentRegex = /--- Content from @([^:]+):/g;
+        let match;
+        while ((match = fileContentRegex.exec(part)) !== null) {
+          filePaths.push(match[1]);
+        }
+
+        // Also look for "Successfully read: filename1, filename2" patterns
+        const successRegex = /Successfully read: (.+)/;
+        const successMatch = successRegex.exec(part);
+        if (successMatch) {
+          const files = successMatch[1].split(',').map((f) => f.trim());
+          filePaths.push(...files);
+        }
+      }
+    }
+  }
+
+  // Remove duplicates
+  return [...new Set(filePaths)];
+}
+
+/**
+ * Extract file paths from a query containing @ commands
+ */
+function _extractFilePathsFromQuery(query: string): string[] {
+  const filePaths: string[] = [];
+  const contextCommands = [
+    'list',
+    'show',
+    'status',
+    'remove',
+    'clear',
+    'clear-all',
+  ];
+
+  // Updated regex to handle consecutive @ commands without spaces
+  // This pattern matches @ followed by non-whitespace characters, but stops at the next @
+  const regex = /@([^\s@\\]+(?:\\\s[^\s@\\]+)*)/g;
+  let match;
+
+  while ((match = regex.exec(query)) !== null) {
+    const commandContent = match[1].replace(/\\\s/g, ' '); // Unescape spaces
+
+    // Check if this is a context command
+    const isExactContextCommand = contextCommands.includes(commandContent);
+    const isContextCommandWithArgs = contextCommands.some((cmd) =>
+      commandContent.startsWith(cmd + ' '),
+    );
+
+    // Only add to file paths if it's not a context command
+    if (!isExactContextCommand && !isContextCommandWithArgs) {
+      filePaths.push(commandContent);
+    }
+  }
+
+  return filePaths;
+}
 
 export function mergePartListUnions(list: PartListUnion[]): PartListUnion {
   const resultParts: PartListUnion = [];
@@ -91,6 +159,7 @@ export const useGeminiStream = (
   onAuthError: () => void,
   performMemoryRefresh: () => Promise<void>,
 ) => {
+  const { actions, state } = useFileContext();
   const [initError, setInitError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const turnCancelledRef = useRef(false);
@@ -99,13 +168,9 @@ export const useGeminiStream = (
   const [pendingHistoryItemRef, setPendingHistoryItem] =
     useStateAndRef<HistoryItemWithoutId | null>(null);
   const processedMemoryToolsRef = useRef<Set<string>>(new Set());
+  const pendingFilesRef = useRef<Set<string>>(new Set()); // Track files pending Gemini processing
+  const geminiContextFilesRef = useRef<Set<string>>(new Set()); // Track files actually in Gemini's context
   const logger = useLogger();
-  const gitService = useMemo(() => {
-    if (!config.getProjectRoot()) {
-      return;
-    }
-    return new GitService(config.getProjectRoot());
-  }, [config]);
 
   const [toolCalls, scheduleToolCalls, markToolsAsSubmitted] =
     useReactToolScheduler(
@@ -129,6 +194,11 @@ export const useGeminiStream = (
       config,
       setPendingHistoryItem,
       getPreferredEditor,
+      history.map((item) => ({
+        role: item.type === MessageType.USER ? 'user' : 'model',
+        parts: [{ text: item.text || '' }],
+      })) as Content[],
+      undefined,
     );
 
   const pendingToolCallGroupDisplay = useMemo(
@@ -136,6 +206,97 @@ export const useGeminiStream = (
       toolCalls.length ? mapTrackedToolCallsToDisplay(toolCalls) : undefined,
     [toolCalls],
   );
+
+  // Method to actually clear Gemini's chat history
+  const clearGeminiContext = useCallback(async () => {
+    try {
+      await geminiClient.resetChat();
+      geminiContextFilesRef.current.clear();
+      onDebugMessage('✓ Cleared Gemini chat history');
+      return true;
+    } catch (error) {
+      onDebugMessage(`Error clearing Gemini context: ${error}`);
+      return false;
+    }
+  }, [geminiClient, onDebugMessage]);
+
+  // Method to remove specific files from Gemini's context
+  const removeFilesFromGeminiContext = useCallback(
+    async (filesToRemove: string[]) => {
+      try {
+        // Get current history
+        const currentHistory = await geminiClient.getHistory();
+
+        // Filter out history entries that contain the specified files
+        const filteredHistory = currentHistory.filter((content) => {
+          if (content.role === 'user' && content.parts) {
+            const contentText = content.parts
+              .map((part) => part.text || '')
+              .join(' ');
+
+            // Check if this content contains any of the files to remove
+            return !filesToRemove.some(
+              (file) =>
+                contentText.includes(`@${file}`) || contentText.includes(file),
+            );
+          }
+          return true;
+        });
+
+        // Set the filtered history back to Gemini
+        await geminiClient.setHistory(filteredHistory);
+
+        // Update our tracking
+        for (const file of filesToRemove) {
+          geminiContextFilesRef.current.delete(file);
+        }
+
+        onDebugMessage(
+          `✓ Removed ${filesToRemove.length} files from Gemini context`,
+        );
+        return true;
+      } catch (error) {
+        onDebugMessage(`Error removing files from Gemini context: ${error}`);
+        return false;
+      }
+    },
+    [geminiClient, onDebugMessage],
+  );
+
+  // Method to sync our tracking with Gemini's actual context
+  const _syncContextWithGemini = useCallback(async () => {
+    try {
+      const geminiHistory = await geminiClient.getHistory();
+      const filesInGeminiContext = new Set<string>();
+
+      // Extract files from Gemini's history
+      for (const content of geminiHistory) {
+        if (content.role === 'user' && content.parts) {
+          const contentText = content.parts
+            .map((part) => part.text || '')
+            .join(' ');
+
+          // Extract @file references
+          const fileMatches = contentText.match(
+            /@([^\s\\]+(?:\\\s[^\s\\]+)*)/g,
+          );
+          if (fileMatches) {
+            for (const match of fileMatches) {
+              const filePath = match.substring(1).replace(/\\\s/g, ' ');
+              filesInGeminiContext.add(filePath);
+            }
+          }
+        }
+      }
+
+      geminiContextFilesRef.current = filesInGeminiContext;
+      onDebugMessage(
+        `Synced context: ${filesInGeminiContext.size} files in Gemini context`,
+      );
+    } catch (error) {
+      onDebugMessage(`Error syncing context with Gemini: ${error}`);
+    }
+  }, [geminiClient, onDebugMessage]);
 
   const onExec = useCallback(async (done: Promise<void>) => {
     setIsResponding(true);
@@ -181,6 +342,15 @@ export const useGeminiStream = (
       }
       turnCancelledRef.current = true;
       abortControllerRef.current?.abort();
+
+      // Clear pending files on user cancellation
+      if (pendingFilesRef.current.size > 0) {
+        onDebugMessage(
+          `Clearing ${pendingFilesRef.current.size} pending files due to user cancellation`,
+        );
+        pendingFilesRef.current.clear();
+      }
+
       if (pendingHistoryItemRef.current) {
         addItem(pendingHistoryItemRef.current, Date.now());
       }
@@ -252,7 +422,7 @@ export const useGeminiStream = (
 
         // Handle @-commands (which might involve tool calls)
         if (isAtCommand(trimmedQuery)) {
-          const atCommandResult = await handleAtCommand({
+          const atCommandResult = await handleEnhancedAtCommand({
             query: trimmedQuery,
             config,
             addItem,
@@ -260,6 +430,251 @@ export const useGeminiStream = (
             messageId: userMessageTimestamp,
             signal: abortSignal,
           });
+
+          // Handle context management commands
+          if (
+            atCommandResult.isContextCommand &&
+            atCommandResult.contextCommand
+          ) {
+            const command = atCommandResult.contextCommand;
+            const args = atCommandResult.contextArgs || [];
+
+            switch (command) {
+              case 'help': {
+                // Render the ContextHelp component directly
+                const helpContent = `
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Context Management Commands:                                                                              │
+│ Use @ commands to manage files in your conversation context.                                              │
+│                                                                                                           │
+│ File Inclusion:                                                                                          │
+│ @filename - Include a specific file in context (e.g., @src/main.ts)                                      │
+│ @directory/ - Include all files in a directory (e.g., @src/)                                             │
+│                                                                                                           │
+│ Context Management:                                                                                      │
+│ @list - Show all files currently in context with sizes and token estimates                               │
+│ @status - Display current context usage statistics                                                       │
+│ @remove filename - Remove a specific file from context                                                   │
+│ @clear - Remove all files from context                                                                   │
+│                                                                                                           │
+│ Tips:                                                                                                    │
+│ • Files are automatically tracked when you include them with @                                           │
+│ • Context is limited to ~1M tokens - use @status to monitor usage                                        │
+│ • Git-ignored files are automatically excluded from context                                              │
+│ • Use @list to see what files are currently in your context                                             │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                `;
+                addItem(
+                  { type: MessageType.INFO, text: helpContent },
+                  userMessageTimestamp,
+                );
+                return { queryToSend: null, shouldProceed: false };
+              }
+
+              case 'list':
+              case 'show': {
+                // Get files from both local tracking and Gemini's actual context
+                const localFiles = actions.getGeminiContextFiles();
+                const geminiFiles = Array.from(geminiContextFilesRef.current);
+
+                if (localFiles.length === 0 && geminiFiles.length === 0) {
+                  addItem(
+                    { type: MessageType.INFO, text: 'No files in context.' },
+                    userMessageTimestamp,
+                  );
+                } else {
+                  let message = '';
+                  if (localFiles.length > 0) {
+                    message += `Files in local tracking:\n${localFiles.map((f) => `- ${f}`).join('\n')}`;
+                  }
+                  if (geminiFiles.length > 0) {
+                    if (message) message += '\n\n';
+                    message += `Files in Gemini context:\n${geminiFiles.map((f) => `- ${f}`).join('\n')}`;
+                  }
+                  addItem(
+                    { type: MessageType.INFO, text: message },
+                    userMessageTimestamp,
+                  );
+                }
+                return { queryToSend: null, shouldProceed: false };
+              }
+
+              case 'status': {
+                const status = actions.getContextStatus();
+                const localFilesCount = actions.getGeminiContextFiles().length;
+                const geminiFilesCount = geminiContextFilesRef.current.size;
+                addItem(
+                  {
+                    type: MessageType.INFO,
+                    text: `Context Status: ${localFilesCount} files tracked locally, ${geminiFilesCount} files in Gemini context, ${status.tokens} tokens (${status.percentage}% of limit)`,
+                  },
+                  userMessageTimestamp,
+                );
+                return { queryToSend: null, shouldProceed: false };
+              }
+
+              case 'remove': {
+                onDebugMessage(
+                  `[DEBUG] @remove command args: ${JSON.stringify(args)}`,
+                );
+                onDebugMessage(
+                  `[DEBUG] Current state files count: ${state.files.size}`,
+                );
+                onDebugMessage(
+                  `[DEBUG] Current state files: ${Array.from(state.files.keys()).join(', ')}`,
+                );
+
+                if (args.length === 0) {
+                  // Show suggestions of available files - use state directly
+                  const fileEntries = Array.from(state.files.entries());
+                  const availableFiles = fileEntries
+                    .filter(([_, fileInfo]) => fileInfo.processedByGemini)
+                    .map(([filePath, _]) => filePath);
+                  const pendingFiles = fileEntries
+                    .filter(([_, fileInfo]) => !fileInfo.processedByGemini)
+                    .map(([filePath, _]) => filePath);
+                  const allFiles = [...availableFiles, ...pendingFiles];
+
+                  onDebugMessage(
+                    `[DEBUG] Available files: ${JSON.stringify(availableFiles)}`,
+                  );
+                  onDebugMessage(
+                    `[DEBUG] Pending files: ${JSON.stringify(pendingFiles)}`,
+                  );
+                  onDebugMessage(
+                    `[DEBUG] All files: ${JSON.stringify(allFiles)}`,
+                  );
+
+                  if (allFiles.length === 0) {
+                    addItem(
+                      {
+                        type: MessageType.INFO,
+                        text: 'No files in context to remove.',
+                      },
+                      userMessageTimestamp,
+                    );
+                  } else {
+                    let message = 'Available files for removal:\n';
+                    if (availableFiles.length > 0) {
+                      message += `\nProcessed files:\n${availableFiles.map((f) => `  - ${f}`).join('\n')}`;
+                    }
+                    if (pendingFiles.length > 0) {
+                      message += `\n\nPending files:\n${pendingFiles.map((f) => `  - ${f}`).join('\n')}`;
+                    }
+                    message +=
+                      '\n\nUsage: @remove <filename> (e.g., @remove package.json)';
+
+                    addItem(
+                      { type: MessageType.INFO, text: message },
+                      userMessageTimestamp,
+                    );
+                  }
+                } else {
+                  const filename = args[0];
+                  onDebugMessage(`[DEBUG] Attempting to remove: ${filename}`);
+
+                  const wasRemoved = actions.removeFile(filename);
+
+                  // Also remove from Gemini's actual context
+                  const removedFromGemini = await removeFilesFromGeminiContext([
+                    filename,
+                  ]);
+
+                  if (wasRemoved) {
+                    addItem(
+                      {
+                        type: MessageType.INFO,
+                        text: `✓ Removed '${filename}' from context tracking`,
+                      },
+                      userMessageTimestamp,
+                    );
+                  } else {
+                    addItem(
+                      {
+                        type: MessageType.INFO,
+                        text: `File '${filename}' was not in context tracking`,
+                      },
+                      userMessageTimestamp,
+                    );
+                  }
+
+                  if (removedFromGemini) {
+                    addItem(
+                      {
+                        type: MessageType.INFO,
+                        text: `✓ Removed '${filename}' from Gemini's context`,
+                      },
+                      userMessageTimestamp,
+                    );
+                  }
+                }
+                return { queryToSend: null, shouldProceed: false };
+              }
+
+              case 'clear':
+              case 'clear-all': {
+                const filesToRemove = Array.from(state.files.keys());
+                actions.clearContext();
+
+                // Actually clear Gemini's chat history
+                const clearedGemini = await clearGeminiContext();
+
+                if (filesToRemove.length > 0) {
+                  addItem(
+                    {
+                      type: MessageType.INFO,
+                      text: `✓ Cleared ${filesToRemove.length} files from context tracking`,
+                    },
+                    userMessageTimestamp,
+                  );
+                } else {
+                  addItem(
+                    {
+                      type: MessageType.INFO,
+                      text: '✓ Cleared all files from context tracking',
+                    },
+                    userMessageTimestamp,
+                  );
+                }
+
+                if (clearedGemini) {
+                  addItem(
+                    {
+                      type: MessageType.INFO,
+                      text: '✓ Cleared Gemini chat history',
+                    },
+                    userMessageTimestamp,
+                  );
+                }
+                return { queryToSend: null, shouldProceed: false };
+              }
+
+              default:
+                addItem(
+                  {
+                    type: MessageType.ERROR,
+                    text: `Unknown context command: ${command}`,
+                  },
+                  userMessageTimestamp,
+                );
+                return { queryToSend: null, shouldProceed: false };
+            }
+          }
+
+          // Track files that will be processed by Gemini (but don't add to context yet)
+          if (atCommandResult.shouldProceed && atCommandResult.processedQuery) {
+            // Use the resolved file paths from the enhanced at command processor
+            const resolvedFilePaths = atCommandResult.resolvedFilePaths || [];
+            onDebugMessage(
+              `[DEBUG] Resolved file paths from at command processor: ${JSON.stringify(resolvedFilePaths)}`,
+            );
+
+            for (const filePath of resolvedFilePaths) {
+              pendingFilesRef.current.add(filePath);
+              onDebugMessage(`Pending ${filePath} for Gemini processing`);
+            }
+          }
+
           if (!atCommandResult.shouldProceed) {
             return { queryToSend: null, shouldProceed: false };
           }
@@ -294,6 +709,10 @@ export const useGeminiStream = (
       logger,
       shellModeActive,
       scheduleToolCalls,
+      state,
+      actions,
+      clearGeminiContext,
+      removeFilesFromGeminiContext,
     ],
   );
 
@@ -529,7 +948,40 @@ export const useGeminiStream = (
           addItem(pendingHistoryItemRef.current, userMessageTimestamp);
           setPendingHistoryItem(null);
         }
+
+        // Finalize pending files after successful Gemini processing
+        if (pendingFilesRef.current.size > 0) {
+          const pendingFiles = Array.from(pendingFilesRef.current);
+          onDebugMessage(
+            `[DEBUG] Marking as processed: ${JSON.stringify(pendingFiles)}`,
+          );
+          for (const filePath of pendingFiles) {
+            try {
+              const result = await actions.addFile(filePath);
+              if (result.success) {
+                onDebugMessage(
+                  `✓ Added ${filePath} to context (${result.info?.estimatedTokens} tokens)`,
+                );
+                actions.markFileAsProcessedByGemini(filePath);
+              } else {
+                onDebugMessage(
+                  `Failed to add ${filePath} to context: ${result.error}`,
+                );
+              }
+            } catch (error) {
+              onDebugMessage(`Error adding ${filePath} to context: ${error}`);
+            }
+          }
+          pendingFilesRef.current.clear();
+        }
       } catch (error: unknown) {
+        // Clear pending files on error/cancellation
+        if (pendingFilesRef.current.size > 0) {
+          onDebugMessage(
+            `Clearing ${pendingFilesRef.current.size} pending files due to error/cancellation`,
+          );
+          pendingFilesRef.current.clear();
+        }
         if (error instanceof UnauthorizedError) {
           onAuthError();
         } else if (!isNodeError(error) || error.name !== 'AbortError') {
@@ -560,6 +1012,8 @@ export const useGeminiStream = (
       geminiClient,
       onAuthError,
       config,
+      actions,
+      onDebugMessage,
     ],
   );
 
@@ -684,106 +1138,6 @@ export const useGeminiStream = (
     pendingHistoryItemRef.current,
     pendingToolCallGroupDisplay,
   ].filter((i) => i !== undefined && i !== null);
-
-  useEffect(() => {
-    const saveRestorableToolCalls = async () => {
-      if (!config.getCheckpointingEnabled()) {
-        return;
-      }
-      const restorableToolCalls = toolCalls.filter(
-        (toolCall) =>
-          (toolCall.request.name === 'replace' ||
-            toolCall.request.name === 'write_file') &&
-          toolCall.status === 'awaiting_approval',
-      );
-
-      if (restorableToolCalls.length > 0) {
-        const checkpointDir = config.getProjectTempDir()
-          ? path.join(config.getProjectTempDir(), 'checkpoints')
-          : undefined;
-
-        if (!checkpointDir) {
-          return;
-        }
-
-        try {
-          await fs.mkdir(checkpointDir, { recursive: true });
-        } catch (error) {
-          if (!isNodeError(error) || error.code !== 'EEXIST') {
-            onDebugMessage(
-              `Failed to create checkpoint directory: ${getErrorMessage(error)}`,
-            );
-            return;
-          }
-        }
-
-        for (const toolCall of restorableToolCalls) {
-          const filePath = toolCall.request.args['file_path'] as string;
-          if (!filePath) {
-            onDebugMessage(
-              `Skipping restorable tool call due to missing file_path: ${toolCall.request.name}`,
-            );
-            continue;
-          }
-
-          try {
-            let commitHash = await gitService?.createFileSnapshot(
-              `Snapshot for ${toolCall.request.name}`,
-            );
-
-            if (!commitHash) {
-              commitHash = await gitService?.getCurrentCommitHash();
-            }
-
-            if (!commitHash) {
-              onDebugMessage(
-                `Failed to create snapshot for ${filePath}. Skipping restorable tool call.`,
-              );
-              continue;
-            }
-
-            const timestamp = new Date()
-              .toISOString()
-              .replace(/:/g, '-')
-              .replace(/\./g, '_');
-            const toolName = toolCall.request.name;
-            const fileName = path.basename(filePath);
-            const toolCallWithSnapshotFileName = `${timestamp}-${fileName}-${toolName}.json`;
-            const clientHistory = await geminiClient?.getHistory();
-            const toolCallWithSnapshotFilePath = path.join(
-              checkpointDir,
-              toolCallWithSnapshotFileName,
-            );
-
-            await fs.writeFile(
-              toolCallWithSnapshotFilePath,
-              JSON.stringify(
-                {
-                  history,
-                  clientHistory,
-                  toolCall: {
-                    name: toolCall.request.name,
-                    args: toolCall.request.args,
-                  },
-                  commitHash,
-                  filePath,
-                },
-                null,
-                2,
-              ),
-            );
-          } catch (error) {
-            onDebugMessage(
-              `Failed to write restorable tool call file: ${getErrorMessage(
-                error,
-              )}`,
-            );
-          }
-        }
-      }
-    };
-    saveRestorableToolCalls();
-  }, [toolCalls, config, onDebugMessage, gitService, history, geminiClient]);
 
   return {
     streamingState,
