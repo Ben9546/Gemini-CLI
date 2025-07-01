@@ -147,7 +147,7 @@ const App = ({ config, settings, startupWarnings = [] }: AppProps) => {
     openThemeDialog,
     handleThemeSelect,
     handleThemeHighlight,
-  } = useThemeCommand(settings, setThemeError, addItem);
+  } = useThemeCommand(settings, addItem, setThemeError);
 
   const {
     isAuthDialogOpen,

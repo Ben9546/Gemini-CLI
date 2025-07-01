@@ -17,6 +17,7 @@ import {
 import stripJsonComments from 'strip-json-comments';
 import { DefaultLight } from '../ui/themes/default-light.js';
 import { DefaultDark } from '../ui/themes/default.js';
+import { CustomTheme } from '../ui/themes/theme.js';
 
 export const SETTINGS_DIRECTORY_NAME = '.gemini';
 export const USER_SETTINGS_DIR = path.join(homedir(), SETTINGS_DIRECTORY_NAME);
@@ -37,6 +38,7 @@ export interface AccessibilitySettings {
 
 export interface Settings {
   theme?: string;
+  customThemes?: Record<string, CustomTheme>;
   selectedAuthType?: AuthType;
   sandbox?: boolean | string;
   coreTools?: string[];
@@ -63,6 +65,8 @@ export interface Settings {
 
   // UI setting. Does not display the ANSI-controlled terminal title.
   hideWindowTitle?: boolean;
+
+
   hideTips?: boolean;
 
   // Add other settings here.
@@ -100,9 +104,20 @@ export class LoadedSettings {
   }
 
   private computeMergedSettings(): Settings {
+    const user = this.user.settings;
+    const workspace = this.workspace.settings;
+
     return {
-      ...this.user.settings,
-      ...this.workspace.settings,
+      ...user,
+      ...workspace,
+      customThemes: {
+        ...(user.customThemes || {}),
+        ...(workspace.customThemes || {}),
+      },
+      mcpServers: {
+        ...(user.mcpServers || {}),
+        ...(workspace.mcpServers || {}),
+      },
     };
   }
 
@@ -120,10 +135,14 @@ export class LoadedSettings {
   setValue(
     scope: SettingScope,
     key: keyof Settings,
-    value: string | Record<string, MCPServerConfig> | undefined,
+    value:
+      | string
+      | Record<string, MCPServerConfig>
+      | Record<string, CustomTheme>
+      | undefined,
   ): void {
     const settingsFile = this.forScope(scope);
-    // @ts-expect-error - value can be string | Record<string, MCPServerConfig>
+    // @ts-expect-error - value can be string | Record<string, MCPServerConfig> | Record<string, CustomTheme>
     settingsFile.settings[key] = value;
     this._merged = this.computeMergedSettings();
     saveSettings(settingsFile);
