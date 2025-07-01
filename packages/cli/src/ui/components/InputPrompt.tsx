@@ -142,7 +142,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         buffer.replaceRangeByOffset(
           autoCompleteStartIndex,
           buffer.text.length,
-          selectedSuggestion.value,
+          selectedSuggestion.value + ' ',
         );
       }
       resetCompletionState();
