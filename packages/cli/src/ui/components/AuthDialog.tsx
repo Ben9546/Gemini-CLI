@@ -30,6 +30,7 @@ export function AuthDialog({
     { label: 'Login with Google', value: AuthType.LOGIN_WITH_GOOGLE },
     { label: 'Gemini API Key (AI Studio)', value: AuthType.USE_GEMINI },
     { label: 'Vertex AI', value: AuthType.USE_VERTEX_AI },
+    { label: 'Portkey (Vertex AI via Portkey)', value: AuthType.USE_PORTKEY },
   ];
 
   let initialAuthIndex = items.findIndex(
