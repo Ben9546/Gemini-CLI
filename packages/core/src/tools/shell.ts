@@ -19,6 +19,7 @@ import {
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { getErrorMessage } from '../utils/errors.js';
 import stripAnsi from 'strip-ansi';
+import { analyzeSafety, SafetyLevel } from '../safety/index.js';
 
 export interface ShellToolParams {
   command: string;
@@ -244,6 +245,9 @@ Process Group PGID: Process group started or \`(none)\``,
     updateOutput?: (chunk: string) => void,
   ): Promise<ToolResult> {
     const validationError = this.validateToolParams(params);
+    const safetyLevel = analyzeSafety(params.command);
+    // ##### TODO: fetch autoApprove from the config #####
+    const autoApprove = true;
     if (validationError) {
       return {
         llmContent: [
@@ -253,7 +257,7 @@ Process Group PGID: Process group started or \`(none)\``,
         returnDisplay: `Error: ${validationError}`,
       };
     }
-
+    
     if (abortSignal.aborted) {
       return {
         llmContent: 'Command was cancelled by user before it could start.',
@@ -261,6 +265,31 @@ Process Group PGID: Process group started or \`(none)\``,
       };
     }
 
+    // Handle based on safety level
+    if (safetyLevel === 'dangerous') {
+      return {
+        llmContent: `Command blocked: ${params.command}\nReason: Marked as *dangerous* by safety analyzer.`,
+        returnDisplay: 'Command blocked for safety.',
+      };
+    }
+
+    if (safetyLevel === 'requires-approval') {
+      if (!autoApprove) {
+        return {
+          llmContent: `Command requires approval: ${params.command}\nReason: Not marked safe for automatic execution.`,
+          returnDisplay: 'Command requires manual approval.',
+        };
+      } else {
+        console.log(`[AUTO-APPROVED] Command requires approval, but auto-approve is enabled.`);
+      }
+    }
+
+    if (safetyLevel === 'safe') {
+      console.log(`[SAFE] Command marked safe: ${params.command}`);
+    }
+
+    
+    
     const isWindows = os.platform() === 'win32';
     const tempFileName = `shell_pgrep_${crypto
       .randomBytes(6)
