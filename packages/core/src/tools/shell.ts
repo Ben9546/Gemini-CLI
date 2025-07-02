@@ -99,33 +99,8 @@ Process Group PGID: Process group started or \`(none)\``,
       .pop(); // take last part and return command root (or undefined if previous line was empty)
   }
 
-  isCommandAllowed(
-    command: string,
-    safetyLevel?: string,
-    approvalMode?: ApprovalMode,
-  ): boolean | { requiresApproval: true; reason: string } {
-    // 0. Safety level checks first
-    if (safetyLevel === 'dangerous') {
-      return false; // Always block dangerous commands
-    }
-
-    if (safetyLevel === 'requires-approval') {
-      if (approvalMode === ApprovalMode.DEFAULT || approvalMode === undefined) {
-        return {
-          requiresApproval: true,
-          reason: `Command requires approval: ${command}\nReason: Not marked safe for automatic execution.`,
-        };
-      } else {
-        console.log(
-          `[AUTO-APPROVED] Command requires approval, but auto-approve mode '${approvalMode}' is enabled.`,
-        );
-      }
-    }
-
-    if (safetyLevel === 'safe') {
-      console.log(`[SAFE] Command marked safe: ${command}`);
-    }
-
+  isCommandAllowed(command: string): boolean {
+    // 0. Disallow command substitution
     if (command.includes('$(') || command.includes('`')) {
       return false;
     }

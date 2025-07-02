@@ -278,7 +278,8 @@ function performAdditionalSafetyChecks(
 
   for (const path of systemPaths) {
     for (const cmd of destructiveCommands) {
-      if (command.includes(path) && command.includes(cmd)) {
+      const cmdPattern = new RegExp(`\\b${cmd}\\b`);
+      if (cmdPattern.test(command) && command.includes(path)) {
         return 'dangerous';
       }
     }
