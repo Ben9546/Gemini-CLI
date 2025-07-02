@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { Config } from '../config/config.js';
+import { Config, ApprovalMode } from '../config/config.js';
 import {
   BaseTool,
   ToolResult,
@@ -99,8 +99,33 @@ Process Group PGID: Process group started or \`(none)\``,
       .pop(); // take last part and return command root (or undefined if previous line was empty)
   }
 
-  isCommandAllowed(command: string): boolean {
-    // 0. Disallow command substitution
+  isCommandAllowed(
+    command: string,
+    safetyLevel?: string,
+    approvalMode?: ApprovalMode,
+  ): boolean | { requiresApproval: true; reason: string } {
+    // 0. Safety level checks first
+    if (safetyLevel === 'dangerous') {
+      return false; // Always block dangerous commands
+    }
+
+    if (safetyLevel === 'requires-approval') {
+      if (approvalMode === ApprovalMode.DEFAULT || approvalMode === undefined) {
+        return {
+          requiresApproval: true,
+          reason: `Command requires approval: ${command}\nReason: Not marked safe for automatic execution.`,
+        };
+      } else {
+        console.log(
+          `[AUTO-APPROVED] Command requires approval, but auto-approve mode '${approvalMode}' is enabled.`,
+        );
+      }
+    }
+
+    if (safetyLevel === 'safe') {
+      console.log(`[SAFE] Command marked safe: ${command}`);
+    }
+
     if (command.includes('$(') || command.includes('`')) {
       return false;
     }
@@ -182,9 +207,20 @@ Process Group PGID: Process group started or \`(none)\``,
   }
 
   validateToolParams(params: ShellToolParams): string | null {
+    // First check safety level
+    const safetyLevel = analyzeSafety(params.command);
+    const approvalMode = this.config.getApprovalMode();
+
+    // Block dangerous commands immediately
+    if (safetyLevel === 'dangerous') {
+      return `Command blocked: ${params.command}\nReason: Marked as *dangerous* by safety analyzer.`;
+    }
+
+    // Check basic command allowance (existing logic)
     if (!this.isCommandAllowed(params.command)) {
       return `Command is not allowed: ${params.command}`;
     }
+
     if (
       !SchemaValidator.validate(
         this.parameterSchema as Record<string, unknown>,
@@ -221,10 +257,51 @@ Process Group PGID: Process group started or \`(none)\``,
     if (this.validateToolParams(params)) {
       return false; // skip confirmation, execute call will fail immediately
     }
-    const rootCommand = this.getCommandRoot(params.command)!; // must be non-empty string post-validation
+
+    const rootCommand = this.getCommandRoot(params.command)!;
     if (this.whitelist.has(rootCommand)) {
       return false; // already approved and whitelisted
     }
+
+    // Analyze safety level
+    const safetyLevel = analyzeSafety(params.command);
+    const approvalMode = this.config.getApprovalMode();
+
+    // Handle commands requiring approval
+    if (safetyLevel === 'requires-approval') {
+      if (approvalMode === ApprovalMode.YOLO) {
+        console.log(
+          `[AUTO-APPROVED] Command requires approval, but YOLO mode is enabled: ${params.command}`,
+        );
+        return false; // auto-approve in YOLO mode
+      }
+
+      // Show confirmation for requires-approval commands
+      const confirmationDetails: ToolExecuteConfirmationDetails = {
+        type: 'exec',
+        title: 'Confirm Shell Command - Requires Approval',
+        command: params.command,
+        rootCommand,
+        onConfirm: async (outcome: ToolConfirmationOutcome) => {
+          if (outcome === ToolConfirmationOutcome.ProceedAlways) {
+            this.whitelist.add(rootCommand);
+          }
+        },
+      };
+      return confirmationDetails;
+    }
+
+    // Handle safe commands
+    if (safetyLevel === 'safe') {
+      console.log(`[SAFE] Command marked safe: ${params.command}`);
+
+      // Auto-approve safe commands in YOLO mode
+      if (approvalMode === ApprovalMode.YOLO) {
+        return false;
+      }
+    }
+
+    // Default confirmation for non-YOLO modes or unknown safety levels
     const confirmationDetails: ToolExecuteConfirmationDetails = {
       type: 'exec',
       title: 'Confirm Shell Command',
@@ -245,9 +322,7 @@ Process Group PGID: Process group started or \`(none)\``,
     updateOutput?: (chunk: string) => void,
   ): Promise<ToolResult> {
     const validationError = this.validateToolParams(params);
-    const safetyLevel = analyzeSafety(params.command);
-    // ##### TODO: fetch autoApprove from the config #####
-    const autoApprove = true;
+
     if (validationError) {
       return {
         llmContent: [
@@ -263,31 +338,6 @@ Process Group PGID: Process group started or \`(none)\``,
         llmContent: 'Command was cancelled by user before it could start.',
         returnDisplay: 'Command cancelled by user.',
       };
-    }
-
-    // Handle based on safety level
-    if (safetyLevel === 'dangerous') {
-      return {
-        llmContent: `Command blocked: ${params.command}\nReason: Marked as *dangerous* by safety analyzer.`,
-        returnDisplay: 'Command blocked for safety.',
-      };
-    }
-
-    if (safetyLevel === 'requires-approval') {
-      if (!autoApprove) {
-        return {
-          llmContent: `Command requires approval: ${params.command}\nReason: Not marked safe for automatic execution.`,
-          returnDisplay: 'Command requires manual approval.',
-        };
-      } else {
-        console.log(
-          `[AUTO-APPROVED] Command requires approval, but auto-approve is enabled.`,
-        );
-      }
-    }
-
-    if (safetyLevel === 'safe') {
-      console.log(`[SAFE] Command marked safe: ${params.command}`);
     }
 
     const isWindows = os.platform() === 'win32';
