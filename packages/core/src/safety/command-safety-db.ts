@@ -170,20 +170,37 @@ export const commandSafety: Record<
 
   // Curl - context dependent
   curl: {
-    '-X GET': 'safe',
-    '--request GET': 'safe',
-    '-I': 'safe',
-    '--head': 'safe',
-    '-X POST': 'requires-approval',
-    '--request POST': 'requires-approval',
-    '-X PUT': 'requires-approval',
-    '-X DELETE': 'requires-approval',
-    '-X PATCH': 'requires-approval',
-    '-d': 'requires-approval',
-    '--data': 'requires-approval',
-    '-F': 'requires-approval',
-    '--form': 'requires-approval',
-    '*': 'safe', // Default GET is safe
+    '-X': {
+      GET: 'safe',
+      POST: 'requires-approval',
+      PUT: 'requires-approval',
+      DELETE: 'requires-approval',
+      PATCH: 'requires-approval',
+      '*': 'requires-approval', // Default for unknown HTTP methods
+    },
+    '--request': {
+      GET: 'safe',
+      POST: 'requires-approval',
+      PUT: 'requires-approval',
+      DELETE: 'requires-approval',
+      PATCH: 'requires-approval',
+      '*': 'requires-approval',
+    },
+    '-I': 'safe', // HEAD request
+    '--head': 'safe', // HEAD request
+    '-d': 'requires-approval', // Data (implies POST)
+    '--data': 'requires-approval', // Data (implies POST)
+    '-F': 'requires-approval', // Form data
+    '--form': 'requires-approval', // Form data
+    '-u': 'requires-approval', // Authentication
+    '--user': 'requires-approval', // Authentication
+    '-H': 'safe', // Headers (generally safe)
+    '--header': 'safe', // Headers (generally safe)
+    '-o': 'safe', // Output to file
+    '--output': 'safe', // Output to file
+    '-L': 'safe', // Follow redirects
+    '--location': 'safe', // Follow redirects
+    '*': 'safe', // Default GET behavior is safe
   },
 
   // Wget - context dependent
