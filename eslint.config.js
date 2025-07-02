@@ -72,6 +72,11 @@ export default tseslint.config(
     plugins: {
       import: importPlugin,
     },
+    settings: {
+      'import/resolver': {
+        node: true,
+      },
+    },
     languageOptions: {
       globals: {
         ...globals.node,
