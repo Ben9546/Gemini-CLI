@@ -209,7 +209,6 @@ Process Group PGID: Process group started or \`(none)\``,
   validateToolParams(params: ShellToolParams): string | null {
     // First check safety level
     const safetyLevel = analyzeSafety(params.command);
-    
 
     // Block dangerous commands immediately
     if (safetyLevel === 'dangerous') {

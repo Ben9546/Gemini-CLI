@@ -10,6 +10,60 @@ export type SafetyLevel = 'safe' | 'requires-approval' | 'dangerous';
 export type ExtendedSafetyLevel = SafetyLevel | 'analyze-nested-command';
 
 /**
+ * Simple shell command parser that handles basic quoting
+ * This is a minimal implementation - for production use, consider using
+ * a library like 'shell-quote' or 'shell-parse'
+ */
+function parseShellCommand(command: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i];
+
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\' && !inSingleQuote) {
+      escaped = true;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+
+    if (char === ' ' && !inSingleQuote && !inDoubleQuote) {
+      if (current.length > 0) {
+        parts.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.length > 0) {
+    parts.push(current);
+  }
+
+  return parts;
+}
+
+/**
  * Analyzes a command string and returns its safety level
  * @param command - The full command string to analyze
  * @returns SafetyLevel indicating how the command should be handled
@@ -20,7 +74,14 @@ export function analyzeSafety(command: string): SafetyLevel {
   }
 
   const trimmedCommand = command.trim();
-  const parts = trimmedCommand.split(/\s+/);
+
+  // Use proper shell parsing instead of simple split
+  const parts = parseShellCommand(trimmedCommand);
+
+  if (parts.length === 0) {
+    return 'requires-approval';
+  }
+
   const mainCommand = parts[0];
   const args = parts.slice(1);
   const flags = parts.filter((part) => part.startsWith('-'));
