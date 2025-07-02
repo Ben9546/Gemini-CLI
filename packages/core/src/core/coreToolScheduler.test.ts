@@ -95,6 +95,7 @@ describe('CoreToolScheduler', () => {
       name: 'mockTool',
       args: {},
       isClientInitiated: false,
+      turn_id: 'turn-id-1',
     };
 
     abortController.abort();
