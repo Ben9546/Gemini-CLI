@@ -295,6 +295,65 @@ export const useSlashCommandProcessor = (
         },
       },
       {
+        name: 'status',
+        description: 'show configuration and test connectivity',
+        action: async (_mainCommand, _subCommand, _args) => {
+          const cliVersion = await getCliVersion();
+          const osVersion = process.platform;
+          const modelVersion = config?.getModel() || 'Unknown';
+          const authType = config?.getContentGeneratorConfig()?.authType || 'Unknown';
+          
+          const authMethodDisplay = (() => {
+            switch (authType) {
+              case 'oauth-personal':
+                return 'gcloud CLI';
+              case 'gemini-api-key':
+                return 'Gemini API Key';
+              case 'vertex-ai':
+                return 'Vertex AI';
+              default:
+                return authType;
+            }
+          })();
+
+          let statusMessage = '--- Gemini CLI Status ---\n';
+          statusMessage += `   - CLI Version:    ${cliVersion}\n`;
+          statusMessage += `   - OS:             ${osVersion}\n`;
+          statusMessage += `   - Model:          ${modelVersion}\n`;
+          statusMessage += `   - Authentication: ${authMethodDisplay}\n\n`;
+          statusMessage += ' --- Connectivity ---\n';
+
+          try {
+            const geminiClient = config?.getGeminiClient();
+            if (!geminiClient) {
+              throw new Error('Gemini client not initialized');
+            }
+
+            const testResponse = await geminiClient.generateContent(
+              [{ role: 'user', parts: [{ text: 'Hello' }] }],
+              { temperature: 0, maxOutputTokens: 1 },
+              AbortSignal.timeout(10000)
+            );
+
+            if (testResponse && testResponse.candidates && testResponse.candidates.length > 0) {
+              statusMessage += '   - Status: Success\n';
+              statusMessage += '   - Details: Successfully connected to Google AI services.';
+            } else {
+              throw new Error('Invalid response from API');
+            }
+          } catch (error) {
+            statusMessage += '   - Status: Failed\n';
+            statusMessage += `   - Reason: ${error instanceof Error ? error.message : String(error)}`;
+          }
+
+          addMessage({
+            type: MessageType.INFO,
+            content: statusMessage,
+            timestamp: new Date(),
+          });
+        },
+      },
+      {
         name: 'mcp',
         description: 'list configured MCP servers and tools',
         action: async (_mainCommand, _subCommand, _args) => {

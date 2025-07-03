@@ -446,6 +446,132 @@ describe('useSlashCommandProcessor', () => {
     });
   });
 
+  describe('/status command', () => {
+    it('should display configuration and connectivity status with successful connection', async () => {
+      mockGetCliVersionFn.mockResolvedValue('1.0.0');
+      const mockGenerateContent = vi.fn().mockResolvedValue({ 
+        candidates: [{ content: { parts: [{ text: 'Hi' }] } }] 
+      });
+      mockConfig = {
+        ...mockConfig,
+        getModel: vi.fn(() => 'gemini-1.5-flash'),
+        getContentGeneratorConfig: vi.fn(() => ({
+          authType: 'oauth-personal',
+        })),
+        getGeminiClient: vi.fn(() => ({
+          generateContent: mockGenerateContent,
+        })),
+      } as unknown as Config;
+
+      const { handleSlashCommand } = getProcessor();
+
+      let commandResult: SlashCommandActionReturn | boolean = false;
+      await act(async () => {
+        commandResult = await handleSlashCommand('/status');
+      });
+
+      expect(mockAddItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MessageType.USER,
+          text: '/status',
+        }),
+        expect.any(Number),
+      );
+
+      expect(mockAddItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: MessageType.INFO,
+          content: expect.stringContaining('--- Gemini CLI Status ---'),
+        }),
+        expect.any(Number),
+      );
+
+      const statusCall = mockAddItem.mock.calls.find((call) =>
+        call[0]?.content?.includes('--- Gemini CLI Status ---'),
+      );
+      expect(statusCall[0].content).toContain('CLI Version:    1.0.0');
+      expect(statusCall[0].content).toContain('OS:             test-platform');
+      expect(statusCall[0].content).toContain('Model:          gemini-1.5-flash');
+      expect(statusCall[0].content).toContain('Authentication: gcloud CLI');
+      expect(statusCall[0].content).toContain('Status: Success');
+      expect(statusCall[0].content).toContain(
+        'Successfully connected to Google AI services.',
+      );
+
+      expect(mockGenerateContent).toHaveBeenCalledWith(
+        [{ role: 'user', parts: [{ text: 'Hello' }] }],
+        { temperature: 0, maxOutputTokens: 1 },
+        expect.any(AbortSignal)
+      );
+      expect(commandResult).toBe(true);
+    });
+
+    it('should display configuration with failed connectivity', async () => {
+      mockGetCliVersionFn.mockResolvedValue('1.0.0');
+      const mockGenerateContent = vi
+        .fn()
+        .mockRejectedValue(new Error('Authentication failed'));
+      mockConfig = {
+        ...mockConfig,
+        getModel: vi.fn(() => 'gemini-1.5-pro'),
+        getContentGeneratorConfig: vi.fn(() => ({
+          authType: 'gemini-api-key',
+        })),
+        getGeminiClient: vi.fn(() => ({
+          generateContent: mockGenerateContent,
+        })),
+      } as unknown as Config;
+
+      const { handleSlashCommand } = getProcessor();
+
+      let commandResult: SlashCommandActionReturn | boolean = false;
+      await act(async () => {
+        commandResult = await handleSlashCommand('/status');
+      });
+
+      const statusCall = mockAddItem.mock.calls.find((call) =>
+        call[0]?.content?.includes('--- Gemini CLI Status ---'),
+      );
+      expect(statusCall[0].content).toContain('CLI Version:    1.0.0');
+      expect(statusCall[0].content).toContain('Model:          gemini-1.5-pro');
+      expect(statusCall[0].content).toContain('Authentication: Gemini API Key');
+      expect(statusCall[0].content).toContain('Status: Failed');
+      expect(statusCall[0].content).toContain('Reason: Authentication failed');
+
+      expect(commandResult).toBe(true);
+    });
+
+    it('should handle missing gemini client gracefully', async () => {
+      mockGetCliVersionFn.mockResolvedValue('1.0.0');
+      mockConfig = {
+        ...mockConfig,
+        getModel: vi.fn(() => 'gemini-1.5-flash'),
+        getContentGeneratorConfig: vi.fn(() => ({
+          authType: 'vertex-ai',
+        })),
+        getGeminiClient: vi.fn(() => null),
+      } as unknown as Config;
+
+      const { handleSlashCommand } = getProcessor();
+
+      let commandResult: SlashCommandActionReturn | boolean = false;
+      await act(async () => {
+        commandResult = await handleSlashCommand('/status');
+      });
+
+      const statusCall = mockAddItem.mock.calls.find((call) =>
+        call[0]?.content?.includes('--- Gemini CLI Status ---'),
+      );
+      expect(statusCall[0].content).toContain('Authentication: Vertex AI');
+      expect(statusCall[0].content).toContain('Status: Failed');
+      expect(statusCall[0].content).toContain(
+        'Reason: Gemini client not initialized',
+      );
+
+      expect(commandResult).toBe(true);
+    });
+  });
+
   describe('Other commands', () => {
     it('/help should open help and return true', async () => {
       const { handleSlashCommand } = getProcessor();
