@@ -53,6 +53,8 @@ interface CliArgs {
   telemetryTarget: string | undefined;
   telemetryOtlpEndpoint: string | undefined;
   telemetryLogPrompts: boolean | undefined;
+  allow_commands?: string | undefined;
+  confirm_commands?: string | undefined;
 }
 
 async function parseArguments(): Promise<CliArgs> {
@@ -101,6 +103,15 @@ async function parseArguments(): Promise<CliArgs> {
         'Automatically accept all actions (aka YOLO mode, see https://www.youtube.com/watch?v=xvFZjo5PgG0 for more details)?',
       default: false,
     })
+    .option('allow-commands', {
+      type: 'string',
+      description: 'Comma-separated list of allowed shell commands',
+    })
+    .option('confirm-commands', {
+      type: 'string',
+      description:
+        'Comma-separated list of shell commands that require confirmation',
+    })
     .option('telemetry', {
       type: 'boolean',
       description:
@@ -134,7 +145,7 @@ async function parseArguments(): Promise<CliArgs> {
     .alias('h', 'help')
     .strict().argv;
 
-  return argv;
+  return argv as CliArgs;
 }
 
 // This function is now a thin wrapper around the server's implementation.
@@ -208,6 +219,12 @@ export async function loadCliConfig(
     fullContext: argv.all_files || false,
     coreTools: settings.coreTools || undefined,
     excludeTools,
+    allowCommands: argv.allow_commands
+      ? argv.allow_commands.split(',').map((cmd) => cmd.trim())
+      : settings.allowCommands || undefined,
+    confirmCommands: argv.confirm_commands
+      ? argv.confirm_commands.split(',').map((cmd) => cmd.trim())
+      : settings.confirmCommands || undefined,
     toolDiscoveryCommand: settings.toolDiscoveryCommand,
     toolCallCommand: settings.toolCallCommand,
     mcpServerCommand: settings.mcpServerCommand,

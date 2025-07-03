@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import safeRegex from 'safe-regex';
 import { Config } from '../config/config.js';
 import {
   BaseTool,
@@ -89,6 +90,10 @@ Process Group PGID: Process group started or \`(none)\``,
     return description;
   }
 
+  getWhitelist(): Set<string> {
+    return new Set(this.whitelist);
+  }
+
   getCommandRoot(command: string): string | undefined {
     return command
       .trim() // remove leading and trailing whitespace
@@ -96,6 +101,82 @@ Process Group PGID: Process group started or \`(none)\``,
       .split(/[\s;&|]+/)[0] // split on any whitespace or separator or chaining operators and take first part
       ?.split(/[/\\]/) // split on any path separators (or return undefined if previous line was undefined)
       .pop(); // take last part and return command root (or undefined if previous line was empty)
+  }
+
+  matchesAllowPattern(command: string, pattern: string): boolean {
+    // Check if pattern is a regex (starts with / and ends with /)
+    if (pattern.startsWith('/') && pattern.endsWith('/')) {
+      try {
+        const regexStr = pattern.slice(1, -1);
+
+        // Check if regex is safe from ReDoS attacks
+        if (!safeRegex(regexStr)) {
+          console.warn(
+            `Potentially unsafe regex pattern detected (ReDoS risk): ${pattern}`,
+          );
+          return false;
+        }
+
+        const regex = new RegExp(regexStr);
+        return regex.test(command);
+      } catch (_e) {
+        // Invalid regex, treat as literal string
+        console.warn(`Invalid regex pattern: ${pattern}`);
+        return false;
+      }
+    }
+
+    // Check for glob-like patterns (contains * or ?)
+    if (pattern.includes('*') || pattern.includes('?')) {
+      // Convert glob to regex
+      const regexPattern = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape regex special chars except * and ?
+        .replace(/\*/g, '.*') // * matches any characters
+        .replace(/\?/g, '.'); // ? matches single character
+      try {
+        // Check if converted glob regex is safe from ReDoS attacks
+        if (!safeRegex(`^${regexPattern}$`)) {
+          console.warn(
+            `Potentially unsafe glob pattern detected (ReDoS risk): ${pattern}`,
+          );
+          return false;
+        }
+
+        const regex = new RegExp(`^${regexPattern}$`);
+        return regex.test(command);
+      } catch (_e) {
+        console.warn(`Invalid glob pattern: ${pattern}`);
+        return false;
+      }
+    }
+
+    // For patterns with spaces, do prefix matching
+    if (pattern.includes(' ')) {
+      return command.startsWith(pattern);
+    }
+
+    // Exact match for single-word patterns
+    return command === pattern;
+  }
+
+  /**
+   * Determines what to match a pattern against based on its type.
+   * - Patterns with spaces or regex patterns match against full command
+   * - Single-word patterns match against command root for backward compatibility
+   */
+  private getCommandToMatch(fullCommand: string, pattern: string): string {
+    // Regex patterns should match against full command
+    if (pattern.startsWith('/') && pattern.endsWith('/')) {
+      return fullCommand;
+    }
+
+    // Patterns with spaces should match against full command
+    if (pattern.includes(' ')) {
+      return fullCommand;
+    }
+
+    // Single-word patterns match against command root
+    return this.getCommandRoot(fullCommand) || '';
   }
 
   isCommandAllowed(command: string): boolean {
@@ -221,9 +302,48 @@ Process Group PGID: Process group started or \`(none)\``,
       return false; // skip confirmation, execute call will fail immediately
     }
     const rootCommand = this.getCommandRoot(params.command)!; // must be non-empty string post-validation
-    if (this.whitelist.has(rootCommand)) {
-      return false; // already approved and whitelisted
+
+    // Check if command is in confirmCommands list FIRST
+    const confirmCommands = this.config.getConfirmCommands();
+    if (confirmCommands && confirmCommands.length > 0) {
+      // Check each pattern against the appropriate command string
+      for (const pattern of confirmCommands) {
+        const commandToMatch = this.getCommandToMatch(params.command, pattern);
+        if (this.matchesAllowPattern(commandToMatch, pattern)) {
+          // Command requires confirmation - always prompt user
+          const confirmationDetails: ToolExecuteConfirmationDetails = {
+            type: 'exec',
+            title: 'Confirm Command',
+            command: params.command,
+            rootCommand,
+            onConfirm: async (outcome: ToolConfirmationOutcome) => {
+              if (outcome === ToolConfirmationOutcome.ProceedAlways) {
+                this.whitelist.add(rootCommand);
+              }
+            },
+          };
+          return confirmationDetails;
+        }
+      }
     }
+
+    // Check if command is in allowCommands list
+    const allowCommands = this.config.getAllowCommands();
+    if (allowCommands && allowCommands.length > 0) {
+      // Check each pattern against the appropriate command string
+      for (const pattern of allowCommands) {
+        const commandToMatch = this.getCommandToMatch(params.command, pattern);
+        if (this.matchesAllowPattern(commandToMatch, pattern)) {
+          return false; // Command is in allowlist, no confirmation needed
+        }
+      }
+    }
+
+    // Check session whitelist
+    if (this.whitelist.has(rootCommand)) {
+      return false; // already approved and whitelisted in this session
+    }
+
     const confirmationDetails: ToolExecuteConfirmationDetails = {
       type: 'exec',
       title: 'Confirm Shell Command',

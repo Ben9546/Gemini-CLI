@@ -1,0 +1,53 @@
+{
+  "basic": {
+    "allowCommands": [
+      "ls",
+      "pwd",
+      "echo",
+      "git status",
+      "npm test"
+    ],
+    "confirmCommands": [
+      "rm -rf",
+      "sudo*"
+    ]
+  },
+  
+  "development": {
+    "allowCommands": [
+      "ls", "pwd", "cat", "grep",
+      "git*",
+      "npm*",
+      "node*",
+      "/^make\\s+\\w+$/",
+      "docker ps",
+      "docker images"
+    ],
+    "confirmCommands": [
+      "git push --force",
+      "npm publish",
+      "rm -rf",
+      "sudo*",
+      "chmod 777"
+    ]
+  },
+  
+  "security-focused": {
+    "allowCommands": [
+      "/^ls(\\s+-[la]+)?$/",
+      "/^git\\s+(status|log|diff)$/",
+      "/^npm\\s+(test|audit)$/",
+      "/^docker\\s+(ps|images|logs)$/"
+    ],
+    "confirmCommands": [
+      "*--force*",
+      "*--no-verify*",
+      "sudo*",
+      "rm*",
+      "chmod*",
+      "chown*",
+      "dd",
+      "/.*>.*/"
+    ]
+  }
+}
