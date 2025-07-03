@@ -16,6 +16,17 @@ import {
   useInput,
   type Key as InkKeyType,
 } from 'ink';
+import process from 'node:process';
+import * as fs from 'fs';
+import ansiEscapes from 'ansi-escapes';
+import {
+  getErrorMessage,
+  type Config,
+  getAllGeminiMdFilenames,
+  ApprovalMode,
+  isEditorAvailable,
+  EditorType,
+} from '@google/gemini-cli-core';
 import { StreamingState, type HistoryItem, MessageType } from './types.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useGeminiStream } from './hooks/useGeminiStream.js';
@@ -26,6 +37,9 @@ import { useEditorSettings } from './hooks/useEditorSettings.js';
 import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useAutoAcceptIndicator } from './hooks/useAutoAcceptIndicator.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
+import { useHistory } from './hooks/useHistoryManager.js';
+import { useLogger } from './hooks/useLogger.js';
+import { useGitBranchName } from './hooks/useGitBranchName.js';
 import { Header } from './components/Header.js';
 import { LoadingIndicator } from './components/LoadingIndicator.js';
 import { AutoAcceptIndicator } from './components/AutoAcceptIndicator.js';
@@ -36,32 +50,24 @@ import { ThemeDialog } from './components/ThemeDialog.js';
 import { AuthDialog } from './components/AuthDialog.js';
 import { AuthInProgress } from './components/AuthInProgress.js';
 import { EditorSettingsDialog } from './components/EditorSettingsDialog.js';
-import { Colors } from './colors.js';
 import { Help } from './components/Help.js';
-import { loadHierarchicalGeminiMemory } from '../config/config.js';
-import { LoadedSettings } from '../config/settings.js';
 import { Tips } from './components/Tips.js';
 import { useConsolePatcher } from './components/ConsolePatcher.js';
 import { DetailedMessagesDisplay } from './components/DetailedMessagesDisplay.js';
 import { HistoryItemDisplay } from './components/HistoryItemDisplay.js';
 import { ContextSummaryDisplay } from './components/ContextSummaryDisplay.js';
-import { useHistory } from './hooks/useHistoryManager.js';
-import process from 'node:process';
-import {
-  getErrorMessage,
-  type Config,
-  getAllGeminiMdFilenames,
-  ApprovalMode,
-  isEditorAvailable,
-  EditorType,
-} from '@google/gemini-cli-core';
-import { validateAuthMethod } from '../config/auth.js';
-import { useLogger } from './hooks/useLogger.js';
+import { UpdateNotification } from './components/UpdateNotification.js';
+import { ShowMoreLines } from './components/ShowMoreLines.js';
+import { useTextBuffer } from './components/shared/text-buffer.js';
 import { StreamingContext } from './contexts/StreamingContext.js';
 import {
   SessionStatsProvider,
   useSessionStats,
 } from './contexts/SessionContext.js';
+import { Colors } from './colors.js';
+import { loadHierarchicalGeminiMemory } from '../config/config.js';
+import { LoadedSettings } from '../config/settings.js';
+import { validateAuthMethod } from '../config/auth.js';
 import { useGitBranchName } from './hooks/useGitBranchName.js';
 import { useBracketedPaste } from './hooks/useBracketedPaste.js';
 import { useTextBuffer } from './components/shared/text-buffer.js';
@@ -131,11 +137,13 @@ const App = ({ config, settings, startupWarnings = [] }: AppProps) => {
   const [ctrlDPressedOnce, setCtrlDPressedOnce] = useState(false);
   const ctrlDTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [constrainHeight, setConstrainHeight] = useState<boolean>(true);
+  const [isPlanMode, setIsPlanMode] = useState<boolean>(false);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
-
+    
   const openPrivacyNotice = useCallback(() => {
     setShowPrivacyNotice(true);
   }, []);
+
 
   const errorCount = useMemo(
     () => consoleMessages.filter((msg) => msg.type === 'error').length,
@@ -282,10 +290,11 @@ const App = ({ config, settings, startupWarnings = [] }: AppProps) => {
     toggleCorgiMode,
     showToolDescriptions,
     setQuittingMessages,
+    setIsPlanMode,
     openPrivacyNotice,
   );
+    
   const pendingHistoryItems = [...pendingSlashCommandHistoryItems];
-
   const { rows: terminalHeight, columns: terminalWidth } = useTerminalSize();
   const isInitialMount = useRef(true);
   const { stdin, setRawMode } = useStdin();
@@ -419,6 +428,7 @@ const App = ({ config, settings, startupWarnings = [] }: AppProps) => {
     getPreferredEditor,
     onAuthError,
     performMemoryRefresh,
+    isPlanMode,
   );
   pendingHistoryItems.push(...pendingGeminiHistoryItems);
   const { elapsedTime, currentLoadingPhrase } =
@@ -823,7 +833,12 @@ const App = ({ config, settings, startupWarnings = [] }: AppProps) => {
             showMemoryUsage={
               config.getDebugMode() || config.getShowMemoryUsage()
             }
-            promptTokenCount={sessionStats.lastPromptTokenCount}
+            promptTokenCount={sessionStats.currentResponse.promptTokenCount}
+            candidatesTokenCount={
+              sessionStats.currentResponse.candidatesTokenCount
+            }
+            totalTokenCount={sessionStats.currentResponse.totalTokenCount}
+            isPlanMode={isPlanMode}
           />
         </Box>
       </Box>

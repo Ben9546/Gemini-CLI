@@ -23,6 +23,9 @@ interface FooterProps {
   showErrorDetails: boolean;
   showMemoryUsage?: boolean;
   promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+  isPlanMode: boolean;
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -35,6 +38,8 @@ export const Footer: React.FC<FooterProps> = ({
   errorCount,
   showErrorDetails,
   showMemoryUsage,
+  totalTokenCount,
+  isPlanMode,
   promptTokenCount,
 }) => {
   const limit = tokenLimit(model);
@@ -79,6 +84,9 @@ export const Footer: React.FC<FooterProps> = ({
 
       {/* Right Section: Gemini Label and Console Summary */}
       <Box alignItems="center">
+        <Text color={Colors.Gray}>
+          {isPlanMode ? 'Plan Mode' : 'Agent Mode'} |{' '}
+        </Text>
         <Text color={Colors.AccentBlue}>
           {' '}
           {model}{' '}

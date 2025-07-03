@@ -129,6 +129,7 @@ describe('Gemini Client (client.ts)', () => {
         getProxy: vi.fn().mockReturnValue(undefined),
         getWorkingDir: vi.fn().mockReturnValue('/test/dir'),
         getFileService: vi.fn().mockReturnValue(fileService),
+        getIsPlanMode: vi.fn().mockReturnValue(false),
       };
       return mock as unknown as Config;
     });

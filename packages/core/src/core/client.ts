@@ -22,7 +22,8 @@ import {
   ChatCompressionInfo,
 } from './turn.js';
 import { Config } from '../config/config.js';
-import { getCoreSystemPrompt, getCompressionPrompt } from './prompts.js';
+import { getCoreSystemPrompt, getPlanModeSystemPrompt } from './prompts.js';
+import { getCoreSystemPrompt, getCompressionPrompt, getPlanModeSystemPrompt } from './prompts.js';
 import { ReadManyFilesTool } from '../tools/read-many-files.js';
 import { getResponseText } from '../utils/generateContentResponseUtilities.js';
 import { checkNextSpeaker } from '../utils/nextSpeakerChecker.js';
@@ -186,7 +187,9 @@ export class GeminiClient {
     ];
     try {
       const userMemory = this.config.getUserMemory();
-      const systemInstruction = getCoreSystemPrompt(userMemory);
+      const systemInstruction = this.config.getIsPlanMode() 
+        ? getPlanModeSystemPrompt(userMemory)
+        : getCoreSystemPrompt(userMemory);
       const generateContentConfigWithThinking = isThinkingSupported(this.model)
         ? {
             ...this.generateContentConfig,
@@ -261,7 +264,9 @@ export class GeminiClient {
   ): Promise<Record<string, unknown>> {
     try {
       const userMemory = this.config.getUserMemory();
-      const systemInstruction = getCoreSystemPrompt(userMemory);
+      const systemInstruction = this.config.getIsPlanMode() 
+        ? getPlanModeSystemPrompt(userMemory)
+        : getCoreSystemPrompt(userMemory);
       const requestConfig = {
         abortSignal,
         ...this.generateContentConfig,
@@ -353,7 +358,9 @@ export class GeminiClient {
 
     try {
       const userMemory = this.config.getUserMemory();
-      const systemInstruction = getCoreSystemPrompt(userMemory);
+      const systemInstruction = this.config.getIsPlanMode() 
+        ? getPlanModeSystemPrompt(userMemory)
+        : getCoreSystemPrompt(userMemory);
 
       const requestConfig = {
         abortSignal,
