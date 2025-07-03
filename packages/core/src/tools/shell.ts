@@ -268,7 +268,7 @@ Process Group PGID: Process group started or \`(none)\``,
     // Handle safe commands
     if (safetyLevel === 'safe') {
       console.log(`[SAFE] Command marked safe: ${params.command}`);
-
+      return false;
       // Auto-approve safe commands in YOLO mode
       if (approvalMode === ApprovalMode.YOLO) {
         return false;

@@ -73,6 +73,20 @@ export function analyzeSafety(command: string): SafetyLevel {
     return 'requires-approval';
   }
 
+  // This is a simplified splitter and doesn't handle complex cases
+  // like escaped separators or separators within quotes.
+  const subCommands = command.split(/&&|\|\||;|\|/);
+  if (subCommands.length > 1) {
+    let overallSafety: SafetyLevel = 'safe';
+    for (const sub of subCommands) {
+      if (sub.trim() === '') continue;
+      const subSafety = analyzeSafety(sub); // Recurse for each subcommand
+      overallSafety = getMostRestrictiveSafetyLevel(overallSafety, subSafety);
+    }
+    // Run heuristic checks on the full command string as well to catch pipes.
+    return performAdditionalSafetyChecks(command, overallSafety);
+  }
+
   const trimmedCommand = command.trim();
 
   // Use proper shell parsing instead of simple split
@@ -104,7 +118,7 @@ export function analyzeSafety(command: string): SafetyLevel {
   // Handle nested command structure
   let safetyLevel = analyzeNestedStructure(commandConfig, args, flags);
 
-  // Additional safety checks
+  // Additional safety checks on the single command part
   safetyLevel = performAdditionalSafetyChecks(trimmedCommand, safetyLevel);
 
   return safetyLevel;
