@@ -81,8 +81,9 @@ export class WebFetchTool extends BaseTool<WebFetchToolParams, ToolResult> {
         type: 'object',
       },
     );
-    if (config.getProxy()) {
-      setGlobalDispatcher(new ProxyAgent(config.getProxy() as string));
+    const proxy = config.getProxy();
+    if (proxy) {
+      setGlobalDispatcher(new ProxyAgent(proxy as string));
     }
   }
 

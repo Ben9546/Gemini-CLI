@@ -6,8 +6,6 @@
 
 import { Buffer } from 'buffer';
 import * as https from 'https';
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 import {
@@ -426,12 +424,10 @@ export class ClearcutLogger {
   getProxyAgent() {
     const proxyUrl = this.config?.getProxy();
     if (!proxyUrl) return undefined;
-    if (proxyUrl.startsWith('socks')) {
-      return new SocksProxyAgent(proxyUrl);
-    } else if (proxyUrl.startsWith('https')) {
+    // undici which is widely used in the repo can only support http & https proxy protocol,
+    // https://github.com/nodejs/undici/issues/2224
+    if (proxyUrl.startsWith('http')) {
       return new HttpsProxyAgent(proxyUrl);
-    } else if (proxyUrl.startsWith('http')) {
-      return new HttpProxyAgent(proxyUrl);
     } else {
       throw new Error('Unsupported proxy type');
     }
