@@ -196,8 +196,8 @@ export const commandSafety: Record<
     '--user': 'requires-approval', // Authentication
     '-H': 'safe', // Headers (generally safe)
     '--header': 'safe', // Headers (generally safe)
-    '-o': 'safe', // Output to file
-    '--output': 'safe', // Output to file
+    '-o': 'requires-approval', // Output to file can overwrite data
+    '--output': 'requires-approval', // Output to file can overwrite data
     '-L': 'safe', // Follow redirects
     '--location': 'safe', // Follow redirects
     '*': 'safe', // Default GET behavior is safe
