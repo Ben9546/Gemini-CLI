@@ -102,14 +102,25 @@ export async function main() {
   const extensions = loadExtensions(workspaceRoot);
   const config = await loadCliConfig(settings.merged, extensions, sessionId);
 
-  // set default fallback to gemini api key
-  // this has to go after load cli because thats where the env is set
-  if (!settings.merged.selectedAuthType && process.env.GEMINI_API_KEY) {
-    settings.setValue(
-      SettingScope.User,
-      'selectedAuthType',
-      AuthType.USE_GEMINI,
-    );
+  // Set a default auth type if one isn't set for a couple of known cases.
+  if (!settings.merged.selectedAuthType) {
+    // In Cloud Shell and we cascade through a couple of options and do not persist auth type to the settings file
+    if (process.env.CLOUD_SHELL === 'true') {
+      if (process.env.GEMINI_API_KEY) {
+        settings.merged.selectedAuthType = AuthType.USE_GEMINI;
+      } else if (process.env.GOOGLE_GENAI_USE_VERTEXAI === 'true') {
+        settings.merged.selectedAuthType = AuthType.USE_VERTEX_AI;
+      } else {
+        settings.merged.selectedAuthType = AuthType.LOGIN_WITH_GOOGLE;
+      }
+      // Outside of Cloud Shell we only default to the Gemini API key and we persist it
+    } else if (process.env.GEMINI_API_KEY) {
+      settings.setValue(
+        SettingScope.User,
+        'selectedAuthType',
+        AuthType.USE_GEMINI,
+      );
+    }
   }
 
   setMaxSizedBoxDebugging(config.getDebugMode());
