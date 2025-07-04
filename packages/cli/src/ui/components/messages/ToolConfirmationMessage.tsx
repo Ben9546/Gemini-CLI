@@ -118,7 +118,11 @@ export const ToolConfirmationMessage: React.FC<
         label: 'Modify with external editor',
         value: ToolConfirmationOutcome.ModifyWithEditor,
       },
-      { label: 'No (esc)', value: ToolConfirmationOutcome.Cancel },
+      {
+        label: 'No (skip this)',
+        value: ToolConfirmationOutcome.Skip,
+      },
+      { label: 'Cancel all (esc)', value: ToolConfirmationOutcome.Cancel },
     );
     bodyContent = (
       <DiffRenderer
@@ -142,7 +146,11 @@ export const ToolConfirmationMessage: React.FC<
         label: `Yes, allow always "${executionProps.rootCommand} ..."`,
         value: ToolConfirmationOutcome.ProceedAlways,
       },
-      { label: 'No (esc)', value: ToolConfirmationOutcome.Cancel },
+      {
+        label: 'No (skip this)',
+        value: ToolConfirmationOutcome.Skip,
+      },
+      { label: 'Cancel all (esc)', value: ToolConfirmationOutcome.Cancel },
     );
 
     let bodyContentHeight = availableBodyContentHeight();
@@ -179,7 +187,11 @@ export const ToolConfirmationMessage: React.FC<
         label: 'Yes, allow always',
         value: ToolConfirmationOutcome.ProceedAlways,
       },
-      { label: 'No (esc)', value: ToolConfirmationOutcome.Cancel },
+      {
+        label: 'No (skip this)',
+        value: ToolConfirmationOutcome.Skip,
+      },
+      { label: 'Cancel all (esc)', value: ToolConfirmationOutcome.Cancel },
     );
 
     bodyContent = (
@@ -220,7 +232,11 @@ export const ToolConfirmationMessage: React.FC<
         label: `Yes, always allow all tools from server "${mcpProps.serverName}"`,
         value: ToolConfirmationOutcome.ProceedAlwaysServer,
       },
-      { label: 'No (esc)', value: ToolConfirmationOutcome.Cancel },
+      {
+        label: 'No (skip this)',
+        value: ToolConfirmationOutcome.Skip,
+      },
+      { label: 'Cancel all (esc)', value: ToolConfirmationOutcome.Cancel },
     );
   }
 
