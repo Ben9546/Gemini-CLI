@@ -212,6 +212,7 @@ export class Config {
     this.checkpointing = params.checkpointing ?? false;
     this.proxy = params.proxy;
     this.cwd = params.cwd ?? process.cwd();
+    this.fileDiscoveryService = params.fileDiscoveryService ?? null;
     this.bugCommand = params.bugCommand;
     this.model = params.model;
     this.extensionContextFilePaths = params.extensionContextFilePaths ?? [];
