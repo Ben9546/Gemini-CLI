@@ -102,6 +102,30 @@ export class GeminiClient {
     this.chat = await this.startChat();
   }
 
+  async undoLastModelTurn(): Promise<void> {
+    if (!this.chat) {
+      return;
+    }
+
+    const history = await this.chat.getHistory();
+    if (history.length === 0) {
+      return;
+    }
+
+    const lastTurn = history[history.length - 1];
+
+    if (lastTurn?.role === 'model') {
+      const newHistory = history.slice(0, -1);
+      const generationConfig = this.chat.getGenerationConfig();
+      this.chat = new GeminiChat(
+        this.config,
+        this.getContentGenerator(),
+        generationConfig,
+        newHistory,
+      );
+    }
+  }
+
   private async getEnvironment(): Promise<Part[]> {
     const cwd = this.config.getWorkingDir();
     const today = new Date().toLocaleDateString(undefined, {
