@@ -157,6 +157,7 @@ describe('useSlashCommandProcessor', () => {
     const settings = {
       merged: {
         contextFileName: 'GEMINI.md',
+        selectedAuthType: 'oauth',
       },
     } as LoadedSettings;
     return renderHook(() =>
