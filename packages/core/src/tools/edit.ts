@@ -24,6 +24,7 @@ import { ensureCorrectEdit } from '../utils/editCorrector.js';
 import { DEFAULT_DIFF_OPTIONS } from './diffOptions.js';
 import { ReadFileTool } from './read-file.js';
 import { ModifiableTool, ModifyContext } from './modifiable-tool.js';
+import { isPathWithinRoot } from '../utils/pathSecurity.js';
 
 /**
  * Parameters for the Edit tool
@@ -134,15 +135,7 @@ Expectation for required parameters:
    * @returns True if the path is within the root directory, false otherwise.
    */
   private isWithinRoot(pathToCheck: string): boolean {
-    const normalizedPath = path.normalize(pathToCheck);
-    const normalizedRoot = this.rootDirectory;
-    const rootWithSep = normalizedRoot.endsWith(path.sep)
-      ? normalizedRoot
-      : normalizedRoot + path.sep;
-    return (
-      normalizedPath === normalizedRoot ||
-      normalizedPath.startsWith(rootWithSep)
-    );
+    return isPathWithinRoot(pathToCheck, this.rootDirectory);
   }
 
   /**

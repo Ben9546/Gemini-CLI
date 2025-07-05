@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { PartUnion } from '@google/genai';
 import mime from 'mime-types';
+import { isPathWithinRoot as secureIsPathWithinRoot } from './pathSecurity.js';
 
 // Constants for text file processing
 const DEFAULT_MAX_LINES_TEXT_FILE = 2000;
@@ -28,6 +29,7 @@ export function getSpecificMimeType(filePath: string): string | undefined {
 
 /**
  * Checks if a path is within a given root directory.
+ * This function now properly resolves symlinks to prevent path traversal attacks.
  * @param pathToCheck The absolute path to check.
  * @param rootDirectory The absolute root directory.
  * @returns True if the path is within the root directory, false otherwise.
@@ -36,21 +38,8 @@ export function isWithinRoot(
   pathToCheck: string,
   rootDirectory: string,
 ): boolean {
-  const normalizedPathToCheck = path.normalize(pathToCheck);
-  const normalizedRootDirectory = path.normalize(rootDirectory);
-
-  // Ensure the rootDirectory path ends with a separator for correct startsWith comparison,
-  // unless it's the root path itself (e.g., '/' or 'C:\').
-  const rootWithSeparator =
-    normalizedRootDirectory === path.sep ||
-    normalizedRootDirectory.endsWith(path.sep)
-      ? normalizedRootDirectory
-      : normalizedRootDirectory + path.sep;
-
-  return (
-    normalizedPathToCheck === normalizedRootDirectory ||
-    normalizedPathToCheck.startsWith(rootWithSeparator)
-  );
+  // Use the secure version that resolves symlinks
+  return secureIsPathWithinRoot(pathToCheck, rootDirectory);
 }
 
 /**

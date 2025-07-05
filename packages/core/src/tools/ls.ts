@@ -10,6 +10,7 @@ import { BaseTool, ToolResult } from './tools.js';
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { makeRelative, shortenPath } from '../utils/paths.js';
 import { Config } from '../config/config.js';
+import { isPathWithinRoot } from '../utils/pathSecurity.js';
 
 /**
  * Parameters for the LS tool
@@ -114,16 +115,7 @@ export class LSTool extends BaseTool<LSToolParams, ToolResult> {
    * @returns True if the path is within the root directory, false otherwise
    */
   private isWithinRoot(dirpath: string): boolean {
-    const normalizedPath = path.normalize(dirpath);
-    const normalizedRoot = path.normalize(this.rootDirectory);
-    // Ensure the normalizedRoot ends with a path separator for proper path comparison
-    const rootWithSep = normalizedRoot.endsWith(path.sep)
-      ? normalizedRoot
-      : normalizedRoot + path.sep;
-    return (
-      normalizedPath === normalizedRoot ||
-      normalizedPath.startsWith(rootWithSep)
-    );
+    return isPathWithinRoot(dirpath, this.rootDirectory);
   }
 
   /**
