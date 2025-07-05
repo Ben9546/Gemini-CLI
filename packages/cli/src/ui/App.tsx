@@ -79,6 +79,8 @@ interface AppProps {
   config: Config;
   settings: LoadedSettings;
   startupWarnings?: string[];
+  initialHistory?: HistoryItem[] | null;
+  sessionPath?: string | null;
 }
 
 export const AppWrapper = (props: AppProps) => (
@@ -87,16 +89,30 @@ export const AppWrapper = (props: AppProps) => (
   </SessionStatsProvider>
 );
 
-const App = ({ config, settings, startupWarnings = [] }: AppProps) => {
+const App = ({
+  config,
+  settings,
+  startupWarnings = [],
+  initialHistory,
+  sessionPath,
+}: AppProps) => {
   useBracketedPaste();
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const { stdout } = useStdout();
 
-  useEffect(() => {
-    checkForUpdates().then(setUpdateMessage);
-  }, []);
+    const { history, addItem, clearItems, loadHistory } = useHistory();
 
-  const { history, addItem, clearItems, loadHistory } = useHistory();
+  useEffect(() => {
+    if (initialHistory) {
+      loadHistory(initialHistory);
+    }
+  }, [initialHistory, loadHistory]);
+
+  useEffect(() => {
+    if (sessionPath && history.length > 0) {
+      fs.writeFileSync(sessionPath, JSON.stringify(history, null, 2));
+    }
+  }, [history, sessionPath]);
   const {
     consoleMessages,
     handleNewMessage,

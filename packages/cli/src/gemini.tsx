@@ -9,7 +9,10 @@ import { render } from 'ink';
 import { AppWrapper } from './ui/App.js';
 import { loadCliConfig } from './config/config.js';
 import { readStdin } from './utils/readStdin.js';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
+import fs from 'node:fs';
+import inquirer from 'inquirer';
+import { HistoryItem } from './ui/types.js';
 import v8 from 'node:v8';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
@@ -169,6 +172,7 @@ export async function main() {
 
   // Render UI, passing necessary config values. Check that there is no command line question.
   if (process.stdin.isTTY && input?.length === 0) {
+    const session = await promptForSession(workspaceRoot);
     setWindowTitle(basename(workspaceRoot), settings);
     render(
       <React.StrictMode>
@@ -176,6 +180,8 @@ export async function main() {
           config={config}
           settings={settings}
           startupWarnings={startupWarnings}
+          initialHistory={session?.history || null}
+          sessionPath={session?.path || null}
         />
       </React.StrictMode>,
       { exitOnCtrlC: false },
@@ -294,4 +300,51 @@ async function validateNonInterActiveAuth(
 
   await nonInteractiveConfig.refreshAuth(selectedAuthType);
   return nonInteractiveConfig;
+}
+
+async function promptForSession(workspaceRoot: string): Promise<{ history: HistoryItem[], path: string } | null> {
+  const sessionsDir = join(workspaceRoot, '.gemini', 'sessions');
+  if (!fs.existsSync(sessionsDir)) {
+    return null;
+  }
+
+  const sessionFiles = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+
+  if (sessionFiles.length === 0) {
+    return null;
+  }
+
+  const { sessionFile } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'sessionFile',
+      message: 'Select a session to resume or start a new one:',
+      choices: [
+        ...sessionFiles,
+        new inquirer.Separator(),
+        'Start new session',
+      ],
+    },
+  ]);
+
+  if (sessionFile === 'Start new session') {
+    const { newSessionName } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'newSessionName',
+        message: 'Enter a name for the new session:',
+        validate: (input) => {
+          if (!input) {
+            return 'Session name cannot be empty.';
+          }
+          return true;
+        }
+      }
+    ]);
+    return { history: [], path: join(sessionsDir, `${newSessionName}.json`) };
+  }
+
+  const sessionPath = join(sessionsDir, sessionFile);
+  const sessionContent = fs.readFileSync(sessionPath, 'utf-8');
+  return { history: JSON.parse(sessionContent), path: sessionPath };
 }
