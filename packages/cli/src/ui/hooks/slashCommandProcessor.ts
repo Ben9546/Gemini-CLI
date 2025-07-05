@@ -265,6 +265,28 @@ export const useSlashCommandProcessor = (
         },
       },
       {
+        name: 'model',
+        description: 'change the model. Usage: /model <model-name>',
+        action: (_mainCommand, subCommand, _args) => {
+          const model = subCommand;
+          if (!model) {
+            addMessage({
+              type: MessageType.ERROR,
+              content: 'Usage: /model <model-name>',
+              timestamp: new Date(),
+            });
+            return;
+          }
+
+          config?.setModel(model);
+          addMessage({
+            type: MessageType.INFO,
+            content: `Model changed to ${model}`,
+            timestamp: new Date(),
+          });
+        },
+      },
+      {
         name: 'stats',
         altName: 'usage',
         description: 'check session stats. Usage: /stats [model|tools]',
