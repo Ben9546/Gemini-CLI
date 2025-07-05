@@ -73,9 +73,10 @@ export class WriteFileTool
     super(
       WriteFileTool.Name,
       'WriteFile',
-      `Writes content to a specified file in the local filesystem. 
-      
+      `Writes content to a specified file in the local filesystem.
+
       The user has the ability to modify \`content\`. If modified, this will be stated in the response.`,
+      'pencil',
       {
         properties: {
           file_path: {
@@ -210,6 +211,8 @@ export class WriteFileTool
       title: `Confirm Write: ${shortenPath(relativePath)}`,
       fileName,
       fileDiff,
+      originalContent,
+      newContent: correctedContent,
       onConfirm: async (outcome: ToolConfirmationOutcome) => {
         if (outcome === ToolConfirmationOutcome.ProceedAlways) {
           this.config.setApprovalMode(ApprovalMode.AUTO_EDIT);
@@ -295,7 +298,12 @@ export class WriteFileTool
         );
       }
 
-      const displayResult: FileDiff = { fileDiff, fileName };
+      const displayResult: FileDiff = {
+        fileDiff,
+        fileName,
+        originalContent: correctedContentResult.originalContent,
+        newContent: correctedContentResult.correctedContent,
+      };
 
       const lines = fileContent.split('\n').length;
       const mimetype = getSpecificMimeType(params.file_path);

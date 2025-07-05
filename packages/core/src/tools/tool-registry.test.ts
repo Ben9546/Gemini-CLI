@@ -21,6 +21,7 @@ import {
   ConfigParameters,
   MCPServerConfig,
   ApprovalMode,
+  Mode,
 } from '../config/config.js';
 import { BaseTool, ToolResult } from './tools.js';
 import {
@@ -107,7 +108,7 @@ const createMockCallableTool = (
 
 class MockTool extends BaseTool<{ param: string }, ToolResult> {
   constructor(name = 'mock-tool', description = 'A mock tool') {
-    super(name, name, description, {
+    super(name, name, description, 'hammer', {
       type: 'object',
       properties: {
         param: { type: 'string' },
@@ -134,6 +135,7 @@ const baseConfigParams: ConfigParameters = {
   geminiMdFileCount: 0,
   approvalMode: ApprovalMode.DEFAULT,
   sessionId: 'test-session-id',
+  mode: Mode.TUI,
 };
 
 describe('ToolRegistry', () => {

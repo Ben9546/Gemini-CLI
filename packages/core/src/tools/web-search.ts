@@ -68,6 +68,7 @@ export class WebSearchTool extends BaseTool<
       WebSearchTool.Name,
       'GoogleSearch',
       'Performs a web search using Google Search (via the Gemini API) and returns the results. This tool is useful for finding information on the internet based on a query.',
+      'globe',
       {
         type: 'object',
         properties: {
