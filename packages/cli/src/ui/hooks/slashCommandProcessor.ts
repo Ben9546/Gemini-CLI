@@ -267,8 +267,12 @@ export const useSlashCommandProcessor = (
       {
         name: 'model',
         description: 'change the model. Usage: /model <model-name>',
-        action: (_mainCommand, subCommand, _args) => {
-          const model = subCommand;
+        action: (_mainCommand, subCommand, args) => {
+          let model = subCommand || '';
+          if (args) {
+            model += ` ${args}`;
+          }
+          model = model.trim();
           if (!model) {
             addMessage({
               type: MessageType.ERROR,
