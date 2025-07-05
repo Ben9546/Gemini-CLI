@@ -119,26 +119,21 @@ function buildImage(imageName, dockerfile) {
       ? `${sandboxCommand} build --authfile=<(echo '{}')`
       : `${sandboxCommand} build`;
 
-  try {
-    execSync(
-      `${buildCommand} ${
-        process.env.BUILD_SANDBOX_FLAGS || ''
-      } -f "${dockerfile}" -t "${imageName}" .`,
-      { stdio: buildStdout, shell: '/bin/bash' },
-    );
-  } catch (e) {
-    console.error(`\nError building sandbox image "${imageName}".`);
-    if (e.stdout?.length) {
-      console.error('--- STDOUT ---');
-      console.error(e.stdout.toString());
-    }
-    if (e.stderr?.length) {
-      console.error('--- STDERR ---');
-      console.error(e.stderr.toString());
-    }
-    process.exit(1);
-  }
-  console.log(`built ${imageName}`);
+  const npmPackageVersion = JSON.parse(
+    readFileSync(join(process.cwd(), 'package.json'), 'utf-8'),
+  ).version;
+
+  const imageTag =
+    process.env.GEMINI_SANDBOX_IMAGE_TAG || imageName.split(':')[1];
+  const finalImageName = `${imageName.split(':')[0]}:${imageTag}`;
+
+  execSync(
+    `${buildCommand} ${
+      process.env.BUILD_SANDBOX_FLAGS || ''
+    } --build-arg -f "${dockerfile}" -t "${finalImageName}" .`,
+    { stdio: buildStdout, shell: '/bin/bash' },
+  );
+  console.log(`built ${finalImageName}`);
 }
 
 if (baseImage && baseDockerfile) {
