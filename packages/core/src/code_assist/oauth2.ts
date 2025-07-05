@@ -5,14 +5,14 @@
  */
 
 import { OAuth2Client, Credentials } from 'google-auth-library';
-import * as http from 'http';
-import url from 'url';
-import crypto from 'crypto';
-import * as net from 'net';
+import * as http from 'node:http';
+import url from 'node:url';
+import crypto from 'node:crypto';
+import * as net from 'node:net';
 import open from 'open';
 import path from 'node:path';
 import { promises as fs, existsSync, readFileSync } from 'node:fs';
-import * as os from 'os';
+import * as os from 'node:os';
 
 //  OAuth Client ID used to initiate OAuth2Client class.
 const OAUTH_CLIENT_ID =

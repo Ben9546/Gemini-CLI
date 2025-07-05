@@ -7,12 +7,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getOauthClient, getCachedGoogleAccountId } from './oauth2.js';
 import { OAuth2Client } from 'google-auth-library';
-import * as fs from 'fs';
-import * as path from 'path';
-import http from 'http';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import http from 'node:http';
 import open from 'open';
-import crypto from 'crypto';
-import * as os from 'os';
+import crypto from 'node:crypto';
+import * as os from 'node:os';
 
 vi.mock('os', async (importOriginal) => {
   const os = await importOriginal<typeof import('os')>();

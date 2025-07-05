@@ -5,9 +5,9 @@
  */
 
 import { BaseTool, ToolResult } from './tools.js';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { homedir } from 'os';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { homedir } from 'node:os';
 
 const memoryToolSchemaData = {
   name: 'save_memory',

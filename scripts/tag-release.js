@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
-import path from 'path';
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 function getVersion() {
   const packageJsonPath = path.resolve(process.cwd(), 'package.json');

@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useStdin } from 'ink';
-import readline from 'readline';
+import readline from 'node:readline';
 
 export interface Key {
   name: string;

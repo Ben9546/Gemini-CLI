@@ -17,7 +17,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { execSync, spawn } from 'child_process';
+import { execSync, spawn } from 'node:child_process';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 
