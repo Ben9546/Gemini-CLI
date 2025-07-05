@@ -10,10 +10,21 @@
     "incremental": true,
     "declaration": true,
     "allowSyntheticDefaultImports": true,
-    "lib": ["ES2023"],
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "module": "NodeNext",
     "moduleResolution": "nodenext",
     "target": "es2022",
-    "types": ["node", "vitest/globals"]
-  }
+    "jsx": "react-jsx",
+    "types": [
+      "node",
+      "react",
+      "react-dom",
+      "ink",
+      "vitest/globals",
+      "@google/gemini-cli-core",
+      "@google/genai"
+    ]
+  },
+  "references": [{ "path": "packages/core" }, { "path": "packages/cli" }],
+  "files": []
 }

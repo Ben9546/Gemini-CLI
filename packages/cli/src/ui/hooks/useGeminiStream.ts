@@ -5,6 +5,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import type React from 'react';
 import { useInput } from 'ink';
 import {
   Config,
@@ -106,6 +107,14 @@ export const useGeminiStream = (
     }
     return new GitService(config.getProjectRoot());
   }, [config]);
+
+  // Queue to hold queries that arrive while Gemini is busy so they are not lost.
+  const pendingQueryQueueRef = useRef<
+    Array<{
+      query: PartListUnion;
+      options?: { isContinuation: boolean };
+    }>
+  >([]);
 
   const [toolCalls, scheduleToolCalls, markToolsAsSubmitted] =
     useReactToolScheduler(
@@ -486,12 +495,17 @@ export const useGeminiStream = (
 
   const submitQuery = useCallback(
     async (query: PartListUnion, options?: { isContinuation: boolean }) => {
+      // If Gemini is busy with a previous request, queue the new one unless it is
+      // a continuation (e.g. tool call response) which must be forwarded
+      // immediately. This prevents user prompts from being silently dropped.
       if (
         (streamingState === StreamingState.Responding ||
           streamingState === StreamingState.WaitingForConfirmation) &&
         !options?.isContinuation
-      )
+      ) {
+        pendingQueryQueueRef.current.push({ query, options });
         return;
+      }
 
       const userMessageTimestamp = Date.now();
       setShowHelp(false);
@@ -500,17 +514,23 @@ export const useGeminiStream = (
       const abortSignal = abortControllerRef.current.signal;
       turnCancelledRef.current = false;
 
+// Mark the stream as responding BEFORE we await any async work to avoid
+// a race where a re-render could enqueue and start processing another
+// query while we are still preparing this one.
+setIsResponding(true);
+
       const { queryToSend, shouldProceed } = await prepareQueryForGemini(
         query,
         userMessageTimestamp,
         abortSignal,
       );
 
+      // If we decided not to proceed, revert the responding state and exit.
       if (!shouldProceed || queryToSend === null) {
+        setIsResponding(false);
         return;
       }
 
-      setIsResponding(true);
       setInitError(null);
 
       try {
@@ -784,6 +804,19 @@ export const useGeminiStream = (
     };
     saveRestorableToolCalls();
   }, [toolCalls, config, onDebugMessage, gitService, history, geminiClient]);
+
+  // Process any queued user requests once the stream returns to an idle state.
+  useEffect(() => {
+    if (
+      streamingState === StreamingState.Idle &&
+      pendingQueryQueueRef.current.length > 0
+    ) {
+      const next = pendingQueryQueueRef.current.shift();
+      if (next) {
+        submitQuery(next.query, next.options);
+      }
+    }
+  }, [streamingState, submitQuery]);
 
   return {
     streamingState,
