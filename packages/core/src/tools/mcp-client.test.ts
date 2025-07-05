@@ -23,9 +23,11 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { parse, ParseEntry } from 'shell-quote';
+import { GoogleAuth } from 'google-auth-library';
 
 // Mock dependencies
 vi.mock('shell-quote');
+vi.mock('google-auth-library');
 
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => {
   const MockedClient = vi.fn();
@@ -254,8 +256,11 @@ describe('discoverMcpTools', () => {
     expect(registeredTool.name).toBe('tool-stdio');
   });
 
-  it('should discover tools via mcpServers config (sse)', async () => {
-    const serverConfig: MCPServerConfig = { url: 'http://localhost:1234/sse' };
+  it('should discover tools via mcpServers config (sse) without auth', async () => {
+    const serverConfig: MCPServerConfig = {
+      url: 'http://localhost:1234/sse',
+      oauth: false,
+    };
     mockConfig.getMcpServers.mockReturnValue({ 'sse-server': serverConfig });
 
     const mockTool = {
@@ -278,13 +283,100 @@ describe('discoverMcpTools', () => {
       mockToolRegistry as any,
     );
 
-    expect(SSEClientTransport).toHaveBeenCalledWith(new URL(serverConfig.url!));
+    expect(SSEClientTransport).toHaveBeenCalledWith(
+      new URL(serverConfig.url!),
+      { requestInit: undefined },
+    );
     expect(mockToolRegistry.registerTool).toHaveBeenCalledWith(
       expect.any(DiscoveredMCPTool),
     );
     const registeredTool = mockToolRegistry.registerTool.mock
       .calls[0][0] as DiscoveredMCPTool;
     expect(registeredTool.name).toBe('tool-sse');
+  });
+
+  it('should send auth headers for sse if oauth is true', async () => {
+    const serverConfig: MCPServerConfig = {
+      url: 'http://localhost:1234/sse',
+      oauth: true,
+    };
+    mockConfig.getMcpServers.mockReturnValue({ 'sse-server': serverConfig });
+
+    const mockGetClient = vi.fn().mockResolvedValue({
+      getRequestHeaders: vi
+        .fn()
+        .mockResolvedValue({ Authorization: 'Bearer test-token' }),
+    });
+    vi.mocked(GoogleAuth).mockReturnValue({
+      getClient: mockGetClient,
+    } as any);
+
+    vi.mocked(Client.prototype.listTools).mockResolvedValue({
+      tools: [{ name: 'test-tool' }],
+    } as any);
+    mockToolRegistry.getToolsByServer.mockReturnValue([
+      expect.any(DiscoveredMCPTool),
+    ]);
+
+    await discoverMcpTools(
+      mockConfig.getMcpServers() ?? {},
+      mockConfig.getMcpServerCommand(),
+      mockToolRegistry as any,
+    );
+
+    expect(GoogleAuth).toHaveBeenCalledTimes(1);
+    expect(mockGetClient).toHaveBeenCalledTimes(1);
+
+    expect(SSEClientTransport).toHaveBeenCalledWith(
+      new URL(serverConfig.url!),
+      {
+        requestInit: {
+          headers: { Authorization: 'Bearer test-token' },
+        },
+      },
+    );
+  });
+
+  it('should send auth headers for http if oauth is true', async () => {
+    const serverConfig: MCPServerConfig = {
+      httpUrl: 'http://localhost:1234/http',
+      oauth: true,
+    };
+    mockConfig.getMcpServers.mockReturnValue({ 'http-server': serverConfig });
+
+    const mockGetClient = vi.fn().mockResolvedValue({
+      getRequestHeaders: vi
+        .fn()
+        .mockResolvedValue({ Authorization: 'Bearer test-token' }),
+    });
+    vi.mocked(GoogleAuth).mockReturnValue({
+      getClient: mockGetClient,
+    } as any);
+
+    vi.mocked(Client.prototype.listTools).mockResolvedValue({
+      tools: [{ name: 'test-tool' }],
+    } as any);
+    mockToolRegistry.getToolsByServer.mockReturnValue([
+      expect.any(DiscoveredMCPTool),
+    ]);
+
+    await discoverMcpTools(
+      mockConfig.getMcpServers() ?? {},
+      mockConfig.getMcpServerCommand(),
+      mockToolRegistry as any,
+    );
+
+    expect(GoogleAuth).toHaveBeenCalledTimes(1);
+    expect(mockGetClient).toHaveBeenCalledTimes(1);
+
+    expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
+      new URL(serverConfig.httpUrl!),
+      {
+        requestInit: {
+          headers: { Authorization: 'Bearer test-token' },
+        },
+      },
+    );
   });
 
   it('should discover tools via mcpServers config (streamable http)', async () => {
@@ -325,17 +417,30 @@ describe('discoverMcpTools', () => {
   });
 
   describe('StreamableHTTPClientTransport headers', () => {
-    const setupHttpTest = async (headers?: Record<string, string>) => {
+    const setupHttpTest = async (
+      headers?: Record<string, string>,
+      oauth = false,
+    ) => {
       const serverConfig: MCPServerConfig = {
         httpUrl: 'http://localhost:3000/mcp',
+        oauth,
         ...(headers && { headers }),
       };
-      const serverName = headers
-        ? 'http-server-with-headers'
-        : 'http-server-no-headers';
-      const toolName = headers ? 'tool-http-headers' : 'tool-http-no-headers';
+      const serverName = 'http-server';
+      const toolName = 'tool-http';
 
       mockConfig.getMcpServers.mockReturnValue({ [serverName]: serverConfig });
+
+      if (oauth) {
+        const mockGetClient = vi.fn().mockResolvedValue({
+          getRequestHeaders: vi
+            .fn()
+            .mockResolvedValue({ Authorization: 'Bearer test-token' }),
+        });
+        vi.mocked(GoogleAuth).mockReturnValue({
+          getClient: mockGetClient,
+        } as any);
+      }
 
       const mockTool = {
         name: toolName,
@@ -360,7 +465,6 @@ describe('discoverMcpTools', () => {
 
     it('should pass headers when provided', async () => {
       const headers = {
-        Authorization: 'Bearer test-token',
         'X-Custom-Header': 'custom-value',
       };
       const { serverConfig } = await setupHttpTest(headers);
@@ -377,6 +481,25 @@ describe('discoverMcpTools', () => {
       expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
         new URL(serverConfig.httpUrl!),
         {},
+      );
+    });
+
+    it('should combine oauth and custom headers', async () => {
+      const headers = {
+        'X-Custom-Header': 'custom-value',
+      };
+      const { serverConfig } = await setupHttpTest(headers, true);
+
+      expect(StreamableHTTPClientTransport).toHaveBeenCalledWith(
+        new URL(serverConfig.httpUrl!),
+        {
+          requestInit: {
+            headers: {
+              ...headers,
+              Authorization: 'Bearer test-token',
+            },
+          },
+        },
       );
     });
   });
@@ -649,6 +772,37 @@ describe('discoverMcpTools', () => {
     const lastClientInstance =
       clientInstances[clientInstances.length - 1]?.value;
     expect(lastClientInstance?.onerror).toEqual(expect.any(Function));
+  });
+
+  it('should log error and skip server if auth fails', async () => {
+    const serverConfig: MCPServerConfig = {
+      httpUrl: 'http://localhost:1234/http',
+      oauth: true,
+    };
+    mockConfig.getMcpServers.mockReturnValue({
+      'auth-fail-server': serverConfig,
+    });
+
+    const mockGetClient = vi.fn().mockRejectedValue(new Error('Auth failed'));
+    vi.mocked(GoogleAuth).mockReturnValue({
+      getClient: mockGetClient,
+    } as any);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await discoverMcpTools(
+      mockConfig.getMcpServers() ?? {},
+      mockConfig.getMcpServerCommand(),
+      mockToolRegistry as any,
+    );
+
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Failed to get auth client or headers for MCP server 'auth-fail-server': Error: Auth failed`,
+      ),
+    );
+    expect(Client).not.toHaveBeenCalled();
+    expect(mockToolRegistry.registerTool).not.toHaveBeenCalled();
   });
 });
 
