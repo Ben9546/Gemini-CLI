@@ -34,6 +34,7 @@ import { formatDuration, formatMemoryUsage } from '../utils/formatters.js';
 import { getCliVersion } from '../../utils/version.js';
 import { LoadedSettings } from '../../config/settings.js';
 import { terminalSetup } from '../utils/terminalSetup.js';
+import { isKittyProtocolSupported } from '../utils/kittyProtocolDetector.js';
 
 export interface SlashCommandActionReturn {
   shouldScheduleTool?: boolean;
@@ -611,9 +612,23 @@ export const useSlashCommandProcessor = (
         description:
           'configure terminal for Shift+Enter and Ctrl+Enter support',
         action: async (_mainCommand, _subCommand, _args) => {
+          // Check if Kitty keyboard protocol is already supported
+          if (isKittyProtocolSupported()) {
+            addMessage({
+              type: MessageType.INFO,
+              content:
+                'Your terminal supports the Kitty keyboard protocol!\n\n' +
+                'Shift+Enter and Ctrl+Enter are already working - no configuration needed.\n' +
+                'The protocol is automatically enabled when you use Gemini CLI.',
+              timestamp: new Date(),
+            });
+            return;
+          }
+
+          // Terminal doesn't support Kitty protocol, proceed with setup
           addMessage({
             type: MessageType.INFO,
-            content: 'Detecting and configuring terminal...',
+            content: 'Configuring terminal for enhanced keyboard support...',
             timestamp: new Date(),
           });
 
