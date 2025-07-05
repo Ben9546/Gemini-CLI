@@ -10,6 +10,7 @@ import Gradient from 'ink-gradient';
 import { Colors } from '../colors.js';
 import { shortAsciiLogo, longAsciiLogo } from './AsciiArt.js';
 import { getAsciiArtWidth } from '../utils/textUtils.js';
+import stripAnsi from 'strip-ansi';
 
 interface HeaderProps {
   customAsciiArt?: string; // For user-defined ASCII art
@@ -23,8 +24,8 @@ export const Header: React.FC<HeaderProps> = ({
   let displayTitle;
   const widthOfLongLogo = getAsciiArtWidth(longAsciiLogo);
 
-  if (customAsciiArt) {
-    displayTitle = customAsciiArt;
+  if (customAsciiArt !== undefined) {
+    displayTitle = stripAnsi(customAsciiArt);
   } else {
     displayTitle =
       terminalWidth >= widthOfLongLogo ? longAsciiLogo : shortAsciiLogo;
