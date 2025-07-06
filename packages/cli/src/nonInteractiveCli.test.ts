@@ -25,7 +25,6 @@ vi.mock('@google/gemini-cli-core', async (importOriginal) => {
   };
 });
 
-// FIX: Mock the local modules directly so we can spy on them.
 vi.mock('./ui/utils/commandUtils.js');
 vi.mock('./ui/hooks/atCommandProcessor.js');
 
@@ -36,8 +35,8 @@ describe('runNonInteractive', () => {
   let mockChat: {
     sendMessageStream: ReturnType<typeof vi.fn>;
   };
-  let mockProcessStdoutWrite: ReturnType<typeof vi.fn>;
-  let mockProcessExit: ReturnType<typeof vi.fn>;
+  let mockProcessStdoutWrite: ReturnType<typeof vi.spyOn>;
+  let mockProcessExit: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.resetAllMocks();
@@ -61,15 +60,19 @@ describe('runNonInteractive', () => {
       getContentGeneratorConfig: vi.fn().mockReturnValue({}),
     } as unknown as Config;
 
-    mockProcessStdoutWrite = vi.fn().mockImplementation(() => true);
-    process.stdout.write = mockProcessStdoutWrite as any;
+    // FIX: Use vi.spyOn to mock global process methods.
+    // This ensures proper test isolation as vi.restoreAllMocks() will
+    // automatically restore the original implementations.
+    mockProcessStdoutWrite = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(() => true);
     mockProcessExit = vi
-      .fn()
+      .spyOn(process, 'exit')
       .mockImplementation((_code?: number) => undefined as never);
-    process.exit = mockProcessExit as any;
   });
 
   afterEach(() => {
+    // This will now correctly restore the spies on process.stdout and process.exit
     vi.restoreAllMocks();
   });
 
@@ -290,7 +293,6 @@ describe('runNonInteractive', () => {
 
   describe('@-command processing', () => {
     it('should process an @-command and send the file content to the model', async () => {
-      // FIX: Spy on the imported module object
       const mockIsAtCommand = vi.spyOn(commandUtils, 'isAtCommand');
       const mockHandleAtCommand = vi.spyOn(
         atCommandProcessor,
@@ -334,7 +336,6 @@ describe('runNonInteractive', () => {
     });
 
     it('should handle a normal prompt without calling @-command logic', async () => {
-      // FIX: Spy on the imported module object
       const mockIsAtCommand = vi.spyOn(commandUtils, 'isAtCommand');
       const mockHandleAtCommand = vi.spyOn(
         atCommandProcessor,
