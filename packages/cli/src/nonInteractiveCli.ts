@@ -21,10 +21,8 @@ import {
 } from '@google/genai';
 
 import { parseAndFormatApiError } from './ui/utils/errorParsing.js';
-// ===== NEW IMPORT =====
 import { isAtCommand } from './ui/utils/commandUtils.js';
 import { handleAtCommand } from './ui/hooks/atCommandProcessor.js';
-// ======================
 
 function getResponseText(response: GenerateContentResponse): string | null {
   if (response.candidates && response.candidates.length > 0) {
@@ -66,7 +64,6 @@ export async function runNonInteractive(
   const chat = await geminiClient.getChat();
   const abortController = new AbortController();
 
-  // ===== NEW LOGIC TO HANDLE @ COMMANDS =====
   let queryToSend: PartListUnion | null = input;
   if (isAtCommand(input)) {
     console.log('[AGENT_LOOP] @-command detected. Processing file content...');
@@ -74,7 +71,7 @@ export async function runNonInteractive(
       query: input,
       config,
       // addItem and onDebugMessage are stubs for non-interactive mode
-      addItem: () => 0, // FIX: Return a number to satisfy the type.
+      addItem: () => 0,
       onDebugMessage: (msg) => console.log(`[DEBUG] [AtCommand] ${msg}`),
       messageId: Date.now(),
       signal: abortController.signal,
@@ -90,9 +87,7 @@ export async function runNonInteractive(
     console.error('[AGENT_LOOP] Error: Query became null after processing.');
     process.exit(1);
   }
-  // ==========================================
 
-  // FIX: Correctly handle all PartListUnion types to create a valid Part[]
   let parts: Part[];
   if (Array.isArray(queryToSend)) {
     // It's (string | Part)[]. We need to convert strings to TextParts.
@@ -154,13 +149,6 @@ export async function runNonInteractive(
             '[AGENT_LOOP] Stream connected. Receiving response chunks.',
           );
           streamConnected = true;
-        }
-
-        const rawResponseChunk = JSON.stringify(resp);
-        console.log(`[AGENT_LOOP_RAW_RESPONSE] Received chunk. Size: ${rawResponseChunk.length} chars.`);
-        const maxLineLength = 500;
-        for (let i = 0; i < rawResponseChunk.length; i += maxLineLength) {
-            console.log(`[AGENT_LOOP_RAW_RESPONSE_CHUNK] ${rawResponseChunk.substring(i, i + maxLineLength)}`);
         }
 
         if (abortController.signal.aborted) {
