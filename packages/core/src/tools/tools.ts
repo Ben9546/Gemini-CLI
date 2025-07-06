@@ -222,6 +222,15 @@ export interface ToolExecuteConfirmationDetails {
   rootCommand: string;
 }
 
+// ---- START: Added for sudo password prompt ----
+export interface ToolPasswordConfirmationDetails {
+  type: 'password';
+  title: string;
+  rootCommand: string;
+  onConfirm: (password: string) => Promise<void>;
+}
+// ---- END: Added for sudo password prompt ----
+
 export interface ToolMcpConfirmationDetails {
   type: 'mcp';
   title: string;
@@ -243,7 +252,10 @@ export type ToolCallConfirmationDetails =
   | ToolEditConfirmationDetails
   | ToolExecuteConfirmationDetails
   | ToolMcpConfirmationDetails
-  | ToolInfoConfirmationDetails;
+  | ToolInfoConfirmationDetails
+  // ---- START: Added for sudo password prompt ----
+  | ToolPasswordConfirmationDetails;
+// ---- END: Added for sudo password prompt ----
 
 export enum ToolConfirmationOutcome {
   ProceedOnce = 'proceed_once',
