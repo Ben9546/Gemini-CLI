@@ -17,9 +17,14 @@ import {
   Part,
   FunctionCall,
   GenerateContentResponse,
+  PartListUnion,
 } from '@google/genai';
 
 import { parseAndFormatApiError } from './ui/utils/errorParsing.js';
+// ===== NEW IMPORT =====
+import { isAtCommand } from './ui/utils/commandUtils.js';
+import { handleAtCommand } from './ui/hooks/atCommandProcessor.js';
+// ======================
 
 function getResponseText(response: GenerateContentResponse): string | null {
   if (response.candidates && response.candidates.length > 0) {
@@ -60,11 +65,76 @@ export async function runNonInteractive(
 
   const chat = await geminiClient.getChat();
   const abortController = new AbortController();
-  let currentMessages: Content[] = [{ role: 'user', parts: [{ text: input }] }];
+
+  // ===== NEW LOGIC TO HANDLE @ COMMANDS =====
+  let queryToSend: PartListUnion | null = input;
+  if (isAtCommand(input)) {
+    console.log('[AGENT_LOOP] @-command detected. Processing file content...');
+    const atResult = await handleAtCommand({
+      query: input,
+      config,
+      // addItem and onDebugMessage are stubs for non-interactive mode
+      addItem: () => 0, // FIX: Return a number to satisfy the type.
+      onDebugMessage: (msg) => console.log(`[DEBUG] [AtCommand] ${msg}`),
+      messageId: Date.now(),
+      signal: abortController.signal,
+    });
+    if (!atResult.shouldProceed) {
+      console.log('[AGENT_LOOP] @-command processing finished. Exiting.');
+      return;
+    }
+    queryToSend = atResult.processedQuery;
+  }
+
+  if (!queryToSend) {
+    console.error('[AGENT_LOOP] Error: Query became null after processing.');
+    process.exit(1);
+  }
+  // ==========================================
+
+  // FIX: Correctly handle all PartListUnion types to create a valid Part[]
+  let parts: Part[];
+  if (Array.isArray(queryToSend)) {
+    // It's (string | Part)[]. We need to convert strings to TextParts.
+    parts = queryToSend.map((p) => (typeof p === 'string' ? { text: p } : p));
+  } else if (typeof queryToSend === 'string') {
+    // It's a single string.
+    parts = [{ text: queryToSend }];
+  } else {
+    // It's a single Part object.
+    parts = [queryToSend];
+  }
+  let currentMessages: Content[] = [{ role: 'user', parts }];
 
   try {
     while (true) {
+      const lastMessage = currentMessages?.[0]?.parts?.[0];
+      if (lastMessage) {
+        if ('text' in lastMessage && lastMessage.text) {
+          console.log(
+            `[AGENT_LOOP] Starting new turn. Last message was: TEXT - "${lastMessage.text.substring(0, 150)}..."`,
+          );
+        } else if (
+          'functionResponse' in lastMessage &&
+          lastMessage.functionResponse
+        ) {
+          console.log(
+            `[AGENT_LOOP] Starting new turn. Last message was: TOOL_RESPONSE for ${lastMessage.functionResponse.name}`,
+          );
+        } else {
+          console.log(
+            `[AGENT_LOOP] Starting new turn. Last message was: ${JSON.stringify(lastMessage).substring(0, 150)}`,
+          );
+        }
+      } else {
+        console.log(
+          `[AGENT_LOOP] Starting new turn. No previous message content to log.`,
+        );
+      }
+
       const functionCalls: FunctionCall[] = [];
+
+      console.log('[AGENT_LOOP] Sending API request and awaiting stream...');
 
       const responseStream = await chat.sendMessageStream({
         message: currentMessages[0]?.parts || [], // Ensure parts are always provided
@@ -76,11 +146,49 @@ export async function runNonInteractive(
         },
       });
 
+      let streamConnected = false;
+
       for await (const resp of responseStream) {
+        if (!streamConnected) {
+          console.log(
+            '[AGENT_LOOP] Stream connected. Receiving response chunks.',
+          );
+          streamConnected = true;
+        }
+
+        const rawResponseChunk = JSON.stringify(resp);
+        console.log(`[AGENT_LOOP_RAW_RESPONSE] Received chunk. Size: ${rawResponseChunk.length} chars.`);
+        const maxLineLength = 500;
+        for (let i = 0; i < rawResponseChunk.length; i += maxLineLength) {
+            console.log(`[AGENT_LOOP_RAW_RESPONSE_CHUNK] ${rawResponseChunk.substring(i, i + maxLineLength)}`);
+        }
+
         if (abortController.signal.aborted) {
           console.error('Operation cancelled.');
           return;
         }
+
+        const textPartForLog = getResponseText(resp);
+        const functionCallsForLog = resp.functionCalls;
+        const thoughtPartForLog = resp.candidates?.[0]?.content?.parts?.[0];
+
+        if (thoughtPartForLog?.thought) {
+          console.log(
+            `[AGENT_LOOP] Model Response: THOUGHT - "${thoughtPartForLog.text?.substring(0, 150)}..."`,
+          );
+        } else if (textPartForLog) {
+          console.log(`[AGENT_LOOP] Model Response: TEXT - "${textPartForLog}"`);
+        } else if (functionCallsForLog && functionCallsForLog.length > 0) {
+          const callNames = functionCallsForLog.map((fc) => fc.name).join(', ');
+          console.log(
+            `[AGENT_LOOP] Model Response: TOOL_CALL(S) - ${callNames}`,
+          );
+        } else {
+          console.log(
+            `[AGENT_LOOP] Model Response: Received a chunk with no text or tool calls.`,
+          );
+        }
+
         const textPart = getResponseText(resp);
         if (textPart) {
           process.stdout.write(textPart);
