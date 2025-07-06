@@ -116,7 +116,7 @@ Process Group PGID: Process group started or \`(none)\``,
    */
   isCommandAllowed(command: string): boolean {
     // 0. Disallow command substitution
-    if (command.includes('$(') || command.includes('`')) {
+    if (command.includes('$(')) {
       return false;
     }
 

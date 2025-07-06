@@ -296,14 +296,14 @@ describe('ShellTool', () => {
     expect(isAllowed).toBe(true);
   });
 
-  it('should block a command with command substitution using backticks', async () => {
+  it('should allow a command with command substitution using backticks', async () => {
     const config = {
       getCoreTools: () => ['run_shell_command(echo)'],
       getExcludeTools: () => [],
     } as unknown as Config;
     const shellTool = new ShellTool(config);
     const isAllowed = shellTool.isCommandAllowed('echo `rm -rf /`');
-    expect(isAllowed).toBe(false);
+    expect(isAllowed).toBe(true);
   });
 
   it('should block a command with command substitution using $()', async () => {
